@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "WN+kSrONnso=",
+  "success": true,
+  "projectFilePath": "c:\\Users\\nobuh\\source\\変則将棋.vscode\\変成将棋.AI\\変成将棋.AI.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\nobuh\\.nuget\\packages\\microsoft.ml.onnxruntime\\1.21.0\\microsoft.ml.onnxruntime.1.21.0.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\microsoft.ml.onnxruntime.managed\\1.21.0\\microsoft.ml.onnxruntime.managed.1.21.0.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\system.memory\\4.5.5\\system.memory.4.5.5.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\system.numerics.tensors\\9.0.0\\system.numerics.tensors.9.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

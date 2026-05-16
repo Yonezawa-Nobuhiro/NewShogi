@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python -m pip index versions pythonnet 2>&1)",
+      "PowerShell(python -m pip install pythonnet 2>&1)",
+      "Bash(python -c \"import sys; print\\(sys.version\\); print\\(sys.executable\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" --version)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\nobuh\\source\\�ϑ�����.vscode\\ml"
+    ]
+  }
+}

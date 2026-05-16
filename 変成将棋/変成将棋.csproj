@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>変成将棋</RootNamespace>
+    <AssemblyName>変成将棋</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="局面設定.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\変成将棋.Engine\変成将棋.Engine.csproj"/>
+    <ProjectReference Include="..\変成将棋.AI\変成将棋.AI.csproj"/>
+  </ItemGroup>
+</Project>

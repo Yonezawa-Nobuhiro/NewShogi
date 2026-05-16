@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "dgSpecHash": "zQ7+4CKGKBE=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\nobuh\\source\\変則将棋.vscode\\変成将棋.Engine.Native\\変成将棋.Engine.Native.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\nobuh\\.nuget\\packages\\microsoft.dotnet.ilcompiler\\8.0.24\\microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.24\\microsoft.net.illink.tasks.8.0.24.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\runtime.win-x64.microsoft.dotnet.ilcompiler\\8.0.24\\runtime.win-x64.microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.24\\microsoft.netcore.app.runtime.win-x64.8.0.24.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.24\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.24.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.24\\microsoft.aspnetcore.app.runtime.win-x64.8.0.24.nupkg.sha512",
+    "C:\\Users\\nobuh\\.nuget\\packages\\runtime.win-x64.microsoft.dotnet.ilcompiler\\8.0.24\\runtime.win-x64.microsoft.dotnet.ilcompiler.8.0.24.nupkg.sha512"
+  ],
+  "logs": []
+}

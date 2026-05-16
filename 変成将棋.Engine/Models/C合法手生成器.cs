@@ -1,0 +1,321 @@
+using static 変成将棋.Models.C駒動き定数;
+namespace 変成将棋.Models;
+
+// 合法手生成器。
+// Generate擬似合法手で王手放置を除く全手を生成し、Filter王手放置で絞り込む。
+// stackalloc S手[最大手数] のバッファを渡して使用する。
+public static class C合法手生成器
+{
+    public const int 最大手数 = 600;
+
+
+    // 合法手を生成してバッファに書き込み、手数を返す
+    public static int Get合法手(C盤面 盤面, Span<S手> バッファ)
+    {
+        int 手数 = Generate擬似合法手(盤面, バッファ);
+        return Filter王手放置(盤面, バッファ, 手数);
+    }
+
+    // 王手放置チェックなしの擬似合法手を生成する
+    public static int Generate擬似合法手(C盤面 盤面, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        var 手番 = 盤面.手番;
+
+        // 盤上の駒の移動
+        for (int 段 = 1; 段 <= 9; 段++)
+        {
+            for (int 列 = 1; 列 <= 9; 列++)
+            {
+                var 升 = new S升座標((byte)列, (byte)段);
+                var 駒 = 盤面.Get駒(升);
+                if (駒 is null || 駒.手番 != 手番) continue;
+                手数 += Generate駒移動(盤面, 升, 駒.種類, 手番, バッファ[手数..]);
+            }
+        }
+
+        // 持ち駒の打ち
+        手数 += Generate打ち(盤面, 手番, バッファ[手数..]);
+        return 手数;
+    }
+
+    // ===== 駒種別の移動生成 =====
+
+    private static int Generate駒移動(
+        C盤面 盤面, S升座標 元, E駒種 種類, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+
+        switch (種類)
+        {
+            // 純スライド駒
+            case E駒種.香車:
+                手数 += Addスライド(盤面, 元, 種類, 手番,
+                    手番 == E手番.先手 ? 香車先手スライド : 香車後手スライド, バッファ);
+                break;
+            case E駒種.角行:
+                手数 += Addスライド(盤面, 元, 種類, 手番, 角行スライド, バッファ);
+                break;
+            case E駒種.飛車:
+                手数 += Addスライド(盤面, 元, 種類, 手番, 飛車スライド, バッファ);
+                break;
+
+            // スライド+固定の複合駒
+            case E駒種.竪行:
+                手数 += Addスライド(盤面, 元, 種類, 手番, 竪行スライド, バッファ);
+                手数 += Add固定(盤面, 元, 種類, 手番, バッファ[手数..]);
+                break;
+            case E駒種.龍馬:
+                手数 += Addスライド(盤面, 元, 種類, 手番, 角行スライド, バッファ);
+                手数 += Add固定(盤面, 元, 種類, 手番, バッファ[手数..]);
+                break;
+            case E駒種.龍王:
+                手数 += Addスライド(盤面, 元, 種類, 手番, 飛車スライド, バッファ);
+                手数 += Add固定(盤面, 元, 種類, 手番, バッファ[手数..]);
+                break;
+
+            // 獅王（特殊移動）
+            case E駒種.獅王:
+                手数 += Generate獅王移動(盤面, 元, 手番, バッファ);
+                break;
+
+            // 玉将（特別な成り条件あり）
+            case E駒種.玉将:
+                手数 += Add玉将移動(盤面, 元, 手番, バッファ);
+                break;
+
+            // 固定移動駒（テーブル参照）
+            default:
+                手数 += Add固定(盤面, 元, 種類, 手番, バッファ);
+                break;
+        }
+
+        return 手数;
+    }
+
+    // スライド移動の生成（指定方向の升を順に走査し、駒にぶつかるまで追加）
+    private static int Addスライド(
+        C盤面 盤面, S升座標 元, E駒種 種類, E手番 手番, int[] 方向一覧, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        foreach (int 方向 in 方向一覧)
+        {
+            foreach (byte 移動先Byte in C到達升テーブル.Getスライドレイ(方向, 元))
+            {
+                var 先 = new S升座標(移動先Byte);
+                var 先駒 = 盤面.Get駒(先);
+                if (先駒?.手番 == 手番) break; // 自駒でブロック
+                Add手または両手(種類, 手番, 元, 先, バッファ, ref 手数);
+                if (先駒!= null) break; // 相手駒を取ったら止まる
+            }
+        }
+        return 手数;
+    }
+
+    // 固定移動の生成（テーブルから到達升を取得）
+    private static int Add固定(
+        C盤面 盤面, S升座標 元, E駒種 種類, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        foreach (byte 移動先Byte in C到達升テーブル.Get到達升(種類, 手番, 元))
+        {
+            var 先 = new S升座標(移動先Byte);
+            if (盤面.Get駒(先)?.手番 == 手番) continue; // 自駒は除外
+            Add手または両手(種類, 手番, 元, 先, バッファ, ref 手数);
+        }
+        return 手数;
+    }
+
+    // 獅王の移動生成（タイプA: 1〜2回移動、タイプB: チェビシェフ距離2ジャンプ）
+    private static int Generate獅王移動(
+        C盤面 盤面, S升座標 元, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        var 隣接升一覧 = C到達升テーブル.Get獅王隣接(元);
+
+        // タイプA: 1回移動
+        foreach (byte 中間Byte in 隣接升一覧)
+        {
+            var 中間 = new S升座標(中間Byte);
+            var 中間駒 = 盤面.Get駒(中間);
+            if (中間駒?.手番 == 手番) continue; // 自駒には移動不可
+
+            // 1回で止まる
+            バッファ[手数++] = S手.Create通常(元, 中間);
+
+            // 2回移動（中間升に自駒がある場合は通過不可なのでスキップ済み）
+            foreach (byte 先Byte in C到達升テーブル.Get獅王隣接(中間))
+            {
+                var 先 = new S升座標(先Byte);
+                // 元のマスに戻る場合は獅王自身がいるが合法（パス扱い）
+                if (先.Byte値 != 元.Byte値 && 盤面.Get駒(先)?.手番 == 手番) continue;
+                バッファ[手数++] = S手.Create獅王2回移動(元, 中間, 先);
+            }
+        }
+
+        // タイプB: チェビシェフ距離2へのジャンプ
+        foreach (byte 先Byte in C到達升テーブル.Get獅王遠達(元))
+        {
+            var 先 = new S升座標(先Byte);
+            if (盤面.Get駒(先)?.手番 == 手番) continue;
+            バッファ[手数++] = S手.Create通常(元, 先);
+        }
+
+        return 手数;
+    }
+
+    // ===== 駒打ち =====
+
+    private static int Generate打ち(C盤面 盤面, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        var 持ち駒 = 手番 == E手番.先手 ? 盤面.先手持ち駒 : 盤面.後手持ち駒;
+
+        foreach (var (駒種, 枚数) in 持ち駒)
+        {
+            if (枚数 <= 0) continue;
+            for (int 段 = 1; 段 <= 9; 段++)
+            {
+                for (int 列 = 1; 列 <= 9; 列++)
+                {
+                    if (盤面.Get駒(列, 段) != null) continue; // 空升のみ
+                    if (!Is打ち可能(盤面, 駒種, 手番, 列, 段)) continue;
+                    var 先 = new S升座標((byte)列, (byte)段);
+                    バッファ[手数++] = S手.Create打ち(駒種, 先);
+                }
+            }
+        }
+        return 手数;
+    }
+
+    private static bool Is打ち可能(C盤面 盤面, E駒種 種類, E手番 手番, int 列, int 段)
+    {
+        // 行き所のない駒：歩・香は最終段不可、桂馬は最終2段不可
+        if (手番 == E手番.先手)
+        {
+            if ((種類 == E駒種.歩兵 || 種類 == E駒種.香車) && 段 == 1) return false;
+            if (種類 == E駒種.桂馬 && 段 <= 2) return false;
+        }
+        else
+        {
+            if ((種類 == E駒種.歩兵 || 種類 == E駒種.香車) && 段 == 9) return false;
+            if (種類 == E駒種.桂馬 && 段 >= 8) return false;
+        }
+
+        // 二歩：同じ列に自分の歩兵がある場合は打てない
+        if (種類 == E駒種.歩兵 && 盤面.Has歩兵(手番, 列)) return false;
+
+        // TODO: 打ち歩詰め判定
+
+        return true;
+    }
+
+    // ===== 成り判定 =====
+
+    private static bool Is敵陣(E手番 手番, S升座標 升)
+        => 手番 == E手番.先手 ? 升.段 <= 3 : 升.段 >= 7;
+
+    // 成り義務：その升に移動すると行き所がなくなる場合は成り強制
+    private static bool Is成り義務(E駒種 種類, E手番 手番, S升座標 先)
+    {
+        if (手番 == E手番.先手)
+        {
+            if (種類 == E駒種.歩兵 || 種類 == E駒種.香車) return 先.段 == 1;
+            if (種類 == E駒種.桂馬) return 先.段 <= 2;
+        }
+        else
+        {
+            if (種類 == E駒種.歩兵 || 種類 == E駒種.香車) return 先.段 == 9;
+            if (種類 == E駒種.桂馬) return 先.段 >= 8;
+        }
+        return false;
+    }
+
+    // 成り可能な移動に対して、成り手と不成り手の両方（または成り義務の場合は成りのみ）を追加
+    private static void Add手または両手(
+        E駒種 種類, E手番 手番, S升座標 元, S升座標 先, Span<S手> バッファ, ref int 手数)
+    {
+        bool 成れる = C駒.Is成れる(種類);
+        bool 敵陣 = Is敵陣(手番, 元) || Is敵陣(手番, 先);
+
+        if (成れる && 敵陣)
+        {
+            バッファ[手数++] = S手.Create通常(元, 先, 成り: true);
+            if (!Is成り義務(種類, 手番, 先))
+                バッファ[手数++] = S手.Create通常(元, 先, 成り: false);
+        }
+        else
+        {
+            バッファ[手数++] = S手.Create通常(元, 先, 成り: false);
+        }
+    }
+
+    // 玉将の移動手生成（特別な成り条件を考慮）
+    private static int Add玉将移動(C盤面 盤面, S升座標 元, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        foreach (byte b in C到達升テーブル.Get到達升(E駒種.玉将, 手番, 元))
+        {
+            var 先 = new S升座標(b);
+            if (盤面.Get駒(先)?.手番 == 手番) continue;
+
+            if (Is玉将成り可能(盤面, 手番, 元, 先))
+            {
+                バッファ[手数++] = S手.Create通常(元, 先, 成り: true);
+                バッファ[手数++] = S手.Create通常(元, 先, 成り: false);
+            }
+            else
+            {
+                バッファ[手数++] = S手.Create通常(元, 先, 成り: false);
+            }
+        }
+        return 手数;
+    }
+
+    // 玉将の成り条件判定
+    // 条件1: 移動元または移動先が敵陣三段目以内
+    // 条件2: 相手の玉将（獅王でない）が自陣三段目以内にいる
+    private static bool Is玉将成り可能(C盤面 盤面, E手番 手番, S升座標 元, S升座標 先)
+    {
+        if (!Is敵陣(手番, 元) && !Is敵陣(手番, 先)) return false;
+
+        var 相手手番 = 手番 == E手番.先手 ? E手番.後手 : E手番.先手;
+        var 相手玉位置 = 盤面.Find玉(相手手番);
+        if (!相手玉位置.Is有効) return false;
+
+        // 相手が既に獅王なら成れない
+        if (盤面.Get駒(相手玉位置)?.種類 == E駒種.獅王) return false;
+
+        // 相手玉が自陣三段目以内（= 相手から見た敵陣三段目以内）
+        return Is敵陣(相手手番, 相手玉位置);
+    }
+
+    // ===== 王手放置フィルタ =====
+
+    private static int Filter王手放置(C盤面 盤面, Span<S手> バッファ, int 手数)
+    {
+        var 指す側 = 盤面.手番;
+        int 有効手数 = 0;
+
+        for (int i = 0; i < 手数; i++)
+        {
+            var 手 = バッファ[i];
+            var 取消情報 = 盤面.Apply(手);
+            bool 放置 = Is王手放置(盤面, 指す側);
+            盤面.Undo(手, 取消情報);
+            if (!放置) バッファ[有効手数++] = 手;
+        }
+        return 有効手数;
+    }
+
+    // 手を指した後（盤面.Apply後）、指した側の玉が相手の攻撃下にあるか判定
+    // 利きビットボードを参照するので O(1) で完了する
+    private static bool Is王手放置(C盤面 盤面, E手番 指す側)
+    {
+        var 玉位置 = 盤面.Find玉(指す側);
+        if (!玉位置.Is有効) return true;
+
+        var 相手利き = 指す側 == E手番.先手 ? 盤面.後手利き : 盤面.先手利き;
+        return 相手利き.Contains(玉位置);
+    }
+}

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>shogi_engine</AssemblyName>
+    <!-- NativeAOT: SharedLibrary にすると .dll/.so を生成 -->
+    <OutputType>Library</OutputType>
+    <PublishAot>true</PublishAot>
+    <TrimmerRootDescriptor>TrimmerRoots.xml</TrimmerRootDescriptor>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\変成将棋.Engine\変成将棋.Engine.csproj"/>
+  </ItemGroup>
+</Project>

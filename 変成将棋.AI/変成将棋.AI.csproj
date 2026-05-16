@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>変成将棋</RootNamespace>
+    <AssemblyName>変成将棋.AI</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.21.0"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\変成将棋.Engine\変成将棋.Engine.csproj"/>
+  </ItemGroup>
+</Project>

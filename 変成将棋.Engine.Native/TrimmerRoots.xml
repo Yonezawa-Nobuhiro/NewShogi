@@ -1,0 +1,5 @@
+<linker>
+  <assembly fullname="shogi_engine">
+    <type fullname="変成将棋.Native.NativeApi" preserve="all"/>
+  </assembly>
+</linker>

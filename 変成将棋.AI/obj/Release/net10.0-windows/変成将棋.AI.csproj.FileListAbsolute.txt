@@ -1,0 +1,16 @@
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\bin\Release\net10.0-windows\局面設定.json
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\bin\Release\net10.0-windows\変成将棋.AI.deps.json
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\bin\Release\net10.0-windows\変成将棋.AI.dll
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\bin\Release\net10.0-windows\変成将棋.AI.pdb
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\bin\Release\net10.0-windows\変成将棋.Engine.dll
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\bin\Release\net10.0-windows\変成将棋.Engine.pdb
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.csproj.AssemblyReference.cache
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.AssemblyInfoInputs.cache
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.AssemblyInfo.cs
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.csproj.CoreCompileInputs.cache
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.csproj.Up2Date
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.dll
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\refint\変成将棋.AI.dll
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\変成将棋.AI.pdb
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.AI\obj\Release\net10.0-windows\ref\変成将棋.AI.dll

@@ -1,0 +1,8 @@
+EXPORTS
+   DotNetRuntimeDebugHeader DATA
+   shogi_initial_sfen
+   shogi_apply
+   shogi_tensor
+   shogi_legal_moves
+   shogi_expand
+   shogi_ownership

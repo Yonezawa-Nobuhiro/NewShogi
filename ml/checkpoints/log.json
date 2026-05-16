@@ -1,0 +1,9 @@
+[
+  {
+    "iter": 1,
+    "policy_loss": 6.7028,
+    "value_loss": 0.3062,
+    "buffer_size": 4539,
+    "elapsed": 1543.0
+  }
+]

@@ -1,0 +1,4 @@
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.Engine.Native\bin\Release\net8.0\win-x64\publish\局面設定.json
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.Engine.Native\bin\Release\net8.0\win-x64\publish\shogi_engine.dll
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.Engine.Native\bin\Release\net8.0\win-x64\publish\shogi_engine.pdb
+C:\Users\nobuh\source\変則将棋.vscode\変成将棋.Engine.Native\bin\Release\net8.0\win-x64\publish\変成将棋.Engine.pdb
