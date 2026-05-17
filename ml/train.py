@@ -103,7 +103,7 @@ def train_step(net: ShogiNet, optimizer: torch.optim.Optimizer,
 
 # ── メインループ ──────────────────────────────────────────────────────
 def run(hp: dict | None = None, pretrained_path: str | None = None,
-        initial_buffer=None):
+        initial_buffer=None, start_iter: int = 0):
     cfg = HP | (hp or {})
 
     env = _Env()
@@ -128,14 +128,23 @@ def run(hp: dict | None = None, pretrained_path: str | None = None,
     runs_dir = cfg.get("tensorboard_dir") or str(ckpt_dir / "runs")
     writer = SummaryWriter(log_dir=runs_dir)
 
-    log = []
+    # 既存の log.json を読み込んで引き継ぐ
+    log_path = ckpt_dir / "log.json"
+    if log_path.exists() and start_iter > 0:
+        with open(log_path, encoding="utf-8") as f:
+            log = json.load(f)
+    else:
+        log = []
+
+    total_iters = start_iter + cfg["num_iters"]
     print(f"\n{'='*60}")
-    print(f"変成将棋 AlphaZero 学習開始  デバイス={device}")
+    print(f"変成将棋 AlphaZero 学習開始  デバイス={device}"
+          + (f"  (iter {start_iter+1}〜{total_iters})" if start_iter > 0 else ""))
     print(f"{'='*60}\n")
 
-    for it in range(1, cfg["num_iters"] + 1):
+    for it in range(start_iter + 1, total_iters + 1):
         t0 = time.time()
-        print(f"[Iter {it}/{cfg['num_iters']}]")
+        print(f"[Iter {it}/{total_iters}]")
 
         # ── 自己対局 ────────────────────────────────────────────────
         generate_games(env, mcts, cfg["games_per_iter"], buf)
