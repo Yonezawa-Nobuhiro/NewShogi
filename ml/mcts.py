@@ -12,7 +12,7 @@ from typing import Optional
 C_PUCT           = 1.25
 DIR_ALPHA        = 0.3    # ディリクレノイズの集中度（将棋は小さめ）
 DIR_EPSILON      = 0.25   # ルートノードのノイズ混合率
-MAX_GAME_LEN     = 512    # これ以上は引き分け扱い
+MAX_GAME_LEN     = 300    # これ以上は後手勝ち扱い
 TEMP_THRESHOLD   = 30     # この手数以降は温度=0（最善手のみ）
 
 

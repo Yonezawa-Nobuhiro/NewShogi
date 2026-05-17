@@ -9,18 +9,25 @@
     <Window.DataContext>
         <vm:C対局VM/>
     </Window.DataContext>
-
-    <!-- 持ち駒ItemsControlのスタイル（後手・先手共通） -->
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <Style x:Key="棋譜ボタン" TargetType="Button">
+            <Setter Property="Background"  Value="#444"/>
+            <Setter Property="Foreground"  Value="White"/>
+            <Setter Property="BorderBrush" Value="#666"/>
+            <Setter Property="Height"      Value="26"/>
+            <Setter Property="FontSize"    Value="12"/>
+            <Setter Property="Cursor"      Value="Hand"/>
+        </Style>
+        <!-- 持ち駒テンプレート（後手・先手共通） -->
         <DataTemplate x:Key="持ち駒テンプレート">
-            <Border Width="36" Height="40" Margin="2" Cursor="Hand"
-                    CornerRadius="3">
+            <Border Width="36" Height="40" Margin="2" Cursor="Hand" CornerRadius="3">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="#555"/>
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding 駒あり}" Value="True">
+                            <DataTrigger Binding="{Binding 駒あり}"   Value="True">
                                 <Setter Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Is選択中}" Value="True">
@@ -54,6 +61,7 @@
             <MenuItem Header="盤面初期化" Command="{Binding 盤面初期化コマンド}"/>
             <Separator Background="#555"/>
             <MenuItem Header="対局者設定">
+
                 <MenuItem Header="先手人間 ／ 後手人間"
                           Command="{Binding 先後人間コマンド}"
                           IsCheckable="True"
@@ -66,6 +74,10 @@
                           Command="{Binding 先CPU後人間コマンド}"
                           IsCheckable="True"
                           IsChecked="{Binding Mode先CPU後人間, Mode=OneWay}"/>
+                <MenuItem Header="先手CPU ／ 後手CPU"
+                          Command="{Binding 先後CPUコマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先後CPU, Mode=OneWay}"/>
                 <Separator Background="#555"/>
                 <MenuItem Header="先手人間 ／ 後手AI"
                           Command="{Binding 先人間後AIコマンド}"
@@ -77,9 +89,24 @@
                           IsEnabled="{Binding AIモデル読み込み済み}"
                           IsCheckable="True"
                           IsChecked="{Binding Mode先AI後人間, Mode=OneWay}"/>
+                <Separator Background="#555"/>
+                <MenuItem Header="先手AI ／ 後手CPU"
+                          Command="{Binding 先AI後CPUコマンド}"
+                          IsEnabled="{Binding AIモデル読み込み済み}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先AI後CPU, Mode=OneWay}"/>
+                <MenuItem Header="先手CPU ／ 後手AI"
+                          Command="{Binding 先CPU後AIコマンド}"
+                          IsEnabled="{Binding AIモデル読み込み済み}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先CPU後AI, Mode=OneWay}"/>
             </MenuItem>
             <Separator Background="#555"/>
             <MenuItem Header="AIモデルを読み込む..." Click="OnAIモデル読み込みClick"/>
+        </MenuItem>
+        <MenuItem Header="棋譜">
+            <MenuItem Header="棋譜を保存..." Click="OnKifuSaveClick"/>
+            <MenuItem Header="棋譜を開く..."  Click="OnKifuLoadClick"/>
         </MenuItem>
     </Menu>
 
@@ -90,6 +117,7 @@
             <ColumnDefinition Width="100"/>
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -236,6 +264,32 @@
             <TextBlock Text="{Binding 勝者表示}"
                        Foreground="#FFD700" FontSize="18" FontWeight="Bold"/>
         </StackPanel>
+
+        <!-- 棋譜ナビゲーションバー -->
+        <Border Grid.Column="0" Grid.ColumnSpan="3" Grid.Row="4"
+                Background="#222" CornerRadius="4" Margin="0,10,0,0" Padding="8,6">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button Content="◀◀" Command="{Binding 最初の手コマンド}"
+                        IsEnabled="{Binding 前の手可能}"
+                        Width="36" Margin="2,0" Style="{StaticResource 棋譜ボタン}"/>
+                <Button Content="◀"  Command="{Binding 前の手コマンド}"
+                        IsEnabled="{Binding 前の手可能}"
+                        Width="36" Margin="2,0" Style="{StaticResource 棋譜ボタン}"/>
+                <TextBlock Text="{Binding 手数表示}"
+                           Foreground="White" FontSize="13" VerticalAlignment="Center"
+                           Margin="10,0" MinWidth="90" TextAlignment="Center"/>
+                <Button Content="▶"  Command="{Binding 次の手コマンド}"
+                        IsEnabled="{Binding 次の手可能}"
+                        Width="36" Margin="2,0" Style="{StaticResource 棋譜ボタン}"/>
+                <Button Content="▶▶" Command="{Binding 最後の手コマンド}"
+                        IsEnabled="{Binding 次の手可能}"
+                        Width="36" Margin="2,0" Style="{StaticResource 棋譜ボタン}"/>
+                <Button Content="対局に戻る" Command="{Binding 棋譜再生終了コマンド}"
+                        Visibility="{Binding 棋譜再生中,
+                            Converter={StaticResource BoolToVisibility}}"
+                        Margin="12,0,0,0" Style="{StaticResource 棋譜ボタン}"/>
+            </StackPanel>
+        </Border>
     </Grid>
 
     </DockPanel>

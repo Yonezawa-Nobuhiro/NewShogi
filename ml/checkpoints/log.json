@@ -1,9 +1,11 @@
 [
   {
     "iter": 1,
-    "policy_loss": 6.7028,
-    "value_loss": 0.3062,
-    "buffer_size": 4539,
-    "elapsed": 1543.0
+    "policy_loss": 0.1113,
+    "value_loss": 0.0302,
+    "ownership_loss": 0.0351,
+    "vprefix_loss": 0.0366,
+    "buffer_size": 6326,
+    "elapsed": 472.4
   }
 ]

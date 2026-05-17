@@ -133,13 +133,14 @@ public static unsafe class NativeApi
         try
         {
             var 盤面 = new C盤面(ReadStr(sfenIn));
+            var (先手利き, 後手利き) = C利き管理.Compute全利き(盤面);
             for (int sq = 0; sq < 81; sq++)
             {
                 int 段 = sq / 9 + 1;
                 int 列 = sq % 9 + 1;
                 var 升 = new S升座標((byte)列, (byte)段);
-                bool 先 = 盤面.先手利き.Contains(升);
-                bool 後 = 盤面.後手利き.Contains(升);
+                bool 先 = 先手利き.Contains(升);
+                bool 後 = 後手利き.Contains(升);
                 ownershipOut[sq] = 先 && !後 ? 1f : !先 && 後 ? -1f : 0f;
             }
             return 0;

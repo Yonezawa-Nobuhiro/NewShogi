@@ -96,13 +96,14 @@ def train_step(net: ShogiNet, optimizer: torch.optim.Optimizer,
     loss.backward()
     optimizer.step()
 
-    return (float(policy_loss), float(value_loss),
-            float(own_loss), float(vp_loss), float(loss),
+    return (policy_loss.item(), value_loss.item(),
+            own_loss.item(), vp_loss.item(), loss.item(),
             value_err.detach().abs().cpu().numpy())
 
 
 # ── メインループ ──────────────────────────────────────────────────────
-def run(hp: dict | None = None, pretrained_path: str | None = None):
+def run(hp: dict | None = None, pretrained_path: str | None = None,
+        initial_buffer=None):
     cfg = HP | (hp or {})
 
     env = _Env()
@@ -117,7 +118,7 @@ def run(hp: dict | None = None, pretrained_path: str | None = None):
     mcts         = MCTS(env, net, device,
                         n_sims=cfg["num_sims"],
                         batch_size=cfg.get("mcts_batch_size", 1))
-    buf          = PrioritizedReplayBuffer(
+    buf          = initial_buffer or PrioritizedReplayBuffer(
                         max_size=cfg["buffer_size"],
                         alpha=cfg.get("per_alpha", 0.6),
                         beta=cfg.get("per_beta",  0.4))

@@ -52,6 +52,13 @@ public readonly struct S利きビット
     // 静的ファクトリ：単一升からビットボードを作る
     public static S利きビット From(S升座標 升) => 空.Set(升);
 
+    // 線形インデックスで直接ビットを取得（攻撃テーブル構築用）
+    public bool GetBit(int linearIdx)
+    {
+        if (linearIdx < 64) return (_下 & (1UL << linearIdx)) != 0;
+        return (_上 & (1UL << (linearIdx - 64))) != 0;
+    }
+
     // 最小インデックス（TZCNT命令利用）。空の場合は -1
     public int FindFirstBit()
     {

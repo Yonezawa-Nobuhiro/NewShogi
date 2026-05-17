@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "Bash(dotnet new *)",
+      "Bash(dotnet add *)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet build *)",
+      "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $env:PATH = \"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\Installer;\" + $env:PATH; dotnet publish 変成将棋.Engine.Native -r win-x64 -c Release --self-contained 2>&1 | Select-Object -Last 10)",
+      "PowerShell($dll = \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋.Engine.Native\\\\bin\\\\Release\\\\net8.0\\\\win-x64\\\\publish\\\\shogi_engine.dll\"; if \\(Test-Path $dll\\) { $f = Get-Item $dll; Write-Output \"$\\($f.Name\\)  $\\([math]::Round\\($f.Length/1MB,1\\)\\) MB  $\\($f.LastWriteTime\\)\" } else { Write-Output \"Not found\" })"
     ],
     "defaultMode": "bypassPermissions"
   }

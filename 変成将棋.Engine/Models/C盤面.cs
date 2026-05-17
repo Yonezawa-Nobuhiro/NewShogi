@@ -8,13 +8,16 @@ public class C盤面
     public Dictionary<E駒種, int> 先手持ち駒 { get; } = [];
     public Dictionary<E駒種, int> 後手持ち駒 { get; } = [];
 
-    // 利きビットボード（差分更新で維持する）
-    private S利きビット _先手利き;
-    private S利きビット _後手利き;
     private S利きビット _全駒ビット; // 全駒の位置（スライド利き計算に使用）
-    public S利きビット 先手利き  => _先手利き;
-    public S利きビット 後手利き  => _後手利き;
     public S利きビット 全駒ビット => _全駒ビット;
+
+    // 駒種別ビットボード（Is王手放置の高速化に使用）
+    // インデックス = (int)E駒種 (0=なし, 1〜16=各駒種)
+    private readonly S利きビット[] _先手駒ビット = new S利きビット[17];
+    private readonly S利きビット[] _後手駒ビット = new S利きビット[17];
+
+    public S利きビット Get駒ビット(E手番 手番, E駒種 種類)
+        => 手番 == E手番.先手 ? _先手駒ビット[(int)種類] : _後手駒ビット[(int)種類];
 
     public C盤面() : this(C局面設定.Load().開始局面) { }
 
@@ -26,7 +29,8 @@ public class C盤面
 
         C将棋FE表記.Setup(this, sfen);
         _全駒ビット = Compute全駒ビット();
-        (_先手利き, _後手利き) = C利き管理.Compute全利き(this);
+
+        Compute駒ビット();
     }
 
     // 盤面を初期局面に戻す（C升オブジェクトを再利用するのでVMの参照は有効なまま）
@@ -43,7 +47,8 @@ public class C盤面
         手番 = E手番.先手;
         C将棋FE表記.Setup(this, sfen);
         _全駒ビット = Compute全駒ビット();
-        (_先手利き, _後手利き) = C利き管理.Compute全利き(this);
+
+        Compute駒ビット();
     }
 
     public C升    Get升(int 列, int 段)     => 升目[列, 段];
@@ -86,9 +91,6 @@ public class C盤面
     // 手を適用して取消情報を返す。手番も切り替わる。
     public S取消情報 Apply(S手 手)
     {
-        // 利き更新（盤面修正前）
-        C利き管理.RemoveOld(手, this, ref _先手利き, ref _後手利き);
-
         C駒? 取り駒   = null;
         C駒? 中間取り駒 = null;
 
@@ -140,8 +142,8 @@ public class C盤面
         // 全駒ビット更新（盤面修正後・AddNew前）
         Apply全駒ビット更新(手, 中間取り駒);
 
-        // 利き更新（盤面修正後）
-        C利き管理.AddNew(手, this, ref _先手利き, ref _後手利き);
+        // 駒種別ビットボード更新（Is王手放置の高速化用）
+        Compute駒ビット();
 
         手番 = 手番 == E手番.先手 ? E手番.後手 : E手番.先手;
         return new S取消情報(取り駒, 中間取り駒);
@@ -150,9 +152,6 @@ public class C盤面
     // Applyの逆操作。手番も元に戻る。
     public void Undo(S手 手, S取消情報 取消情報)
     {
-        // 利き更新（盤面修正前）
-        C利き管理.RemoveOld(手, this, ref _先手利き, ref _後手利き);
-
         手番 = 手番 == E手番.先手 ? E手番.後手 : E手番.先手;
 
         if (手.Is打ち)
@@ -202,8 +201,9 @@ public class C盤面
         // 全駒ビット更新（盤面修正後・AddNew前）
         Undo全駒ビット更新(手, 取消情報);
 
-        // 利き更新（盤面修正後）
-        C利き管理.AddNew(手, this, ref _先手利き, ref _後手利き);
+        // 駒種別ビットボード更新
+        Compute駒ビット();
+
     }
 
     private Dictionary<E駒種, int> Get持ち駒(E手番 手番)
@@ -219,6 +219,24 @@ public class C盤面
     {
         var 持ち駒 = Get持ち駒(手番);
         持ち駒[種類]--;
+    }
+
+    // ===== 駒種別ビットボード ヘルパー =====
+
+    // 全駒種ビットボードを盤面から初期計算する
+    private void Compute駒ビット()
+    {
+        for (int i = 0; i < 17; i++)
+            _先手駒ビット[i] = _後手駒ビット[i] = S利きビット.空;
+        for (int 段 = 1; 段 <= 9; 段++)
+        for (int 列 = 1; 列 <= 9; 列++)
+        {
+            var 駒 = 升目[列, 段].駒;
+            if (駒 == null) continue;
+            var 升 = new S升座標((byte)列, (byte)段);
+            var bits = 駒.手番 == E手番.先手 ? _先手駒ビット : _後手駒ビット;
+            bits[(int)駒.種類] = bits[(int)駒.種類].Set(升);
+        }
     }
 
     // ===== 全駒ビット更新ヘルパー =====

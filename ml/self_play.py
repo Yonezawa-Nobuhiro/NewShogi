@@ -124,6 +124,8 @@ def generate_game(env, mcts, add_noise: bool = True) -> list[Sample]:
         move_count += 1
 
     result = env.result(sfen)
+    if result == 0:
+        result = -1  # 超手数 → 後手勝ち
     T      = len(history)
     samples = []
 
