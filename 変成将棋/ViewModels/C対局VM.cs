@@ -28,12 +28,26 @@ public class C対局VM : INotifyPropertyChanged
     private Dictionary<byte, List<S手>>? _保存済み移動先;
 
     private static readonly IプレイヤーAI _ランダムAI = new CランダムAI();
+    private static readonly IプレイヤーAI _αβAI     = new CαβAI();
 
     private bool _ゲームオーバー;
+    private bool _千日手;
+    private E手番? _千日手敗者;  // 連続王手の反則負けになった側（null=普通の千日手）
+    // 局面頻度マップ（Zobrist ハッシュをキーに使用）
+    private readonly Dictionary<ulong, int> _局面頻度 = new();
+    // 各局面の Zobrist ハッシュ列（_棋譜SFENs と対応、index 0 = 初期局面）
+    private readonly List<ulong> _棋譜ハッシュ = [];
+    // 各局面で後手番かどうか（連続王手判定で使用）
+    private readonly List<bool> _棋譜後手番 = [];
+    // 各局面で「手番側が王手されているか」を記録（連続王手判定用）
+    // _王手状態履歴[k] = _棋譜SFENs[k+1] の手番側が王手されているか
+    private readonly List<bool> _王手状態履歴 = [];
     private bool _先手CPU;
     private bool _後手CPU;
     private bool _先手AI;
     private bool _後手AI;
+    private bool _先手αβ;
+    private bool _後手αβ;
     private IプレイヤーAI? _AIプレイヤー;
 
     // 棋譜
@@ -86,18 +100,26 @@ public class C対局VM : INotifyPropertyChanged
 
     public string 勝者表示
         => _ゲームオーバー
-            ? (_盤面.手番 == E手番.先手 ? "後手の勝ち" : "先手の勝ち")
+            ? (_千日手敗者.HasValue
+                ? (_千日手敗者 == E手番.先手 ? "先手の反則負け（連続王手）" : "後手の反則負け（連続王手）")
+                : (_千日手 ? "千日手（引き分け）"
+                           : _盤面.手番 == E手番.先手 ? "後手の勝ち" : "先手の勝ち"))
             : "";
 
     // 対局者モード（メニューの IsChecked バインディング用）
-    public bool Mode先後人間    => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI;
-    public bool Mode先人間後CPU => !_先手CPU &&  _後手CPU && !_先手AI && !_後手AI;
-    public bool Mode先CPU後人間 =>  _先手CPU && !_後手CPU && !_先手AI && !_後手AI;
-    public bool Mode先後CPU     =>  _先手CPU &&  _後手CPU && !_先手AI && !_後手AI;
-    public bool Mode先人間後AI  => !_先手CPU && !_後手CPU && !_先手AI &&  _後手AI;
-    public bool Mode先AI後人間  => !_先手CPU && !_後手CPU &&  _先手AI && !_後手AI;
-    public bool Mode先AI後CPU   =>  _先手AI  &&  _後手CPU && !_先手CPU && !_後手AI;
-    public bool Mode先CPU後AI   =>  _先手CPU &&  _後手AI  && !_先手AI  && !_後手CPU;
+    private bool αβなし => !_先手αβ && !_後手αβ;
+    public bool Mode先後人間    => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし;
+    public bool Mode先人間後CPU => !_先手CPU &&  _後手CPU && !_先手AI && !_後手AI && αβなし;
+    public bool Mode先CPU後人間 =>  _先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし;
+    public bool Mode先後CPU     =>  _先手CPU &&  _後手CPU && !_先手AI && !_後手AI && αβなし;
+    public bool Mode先人間後AI  => !_先手CPU && !_後手CPU && !_先手AI &&  _後手AI && αβなし;
+    public bool Mode先AI後人間  => !_先手CPU && !_後手CPU &&  _先手AI && !_後手AI && αβなし;
+    public bool Mode先AI後CPU   =>  _先手AI  &&  _後手CPU && !_先手CPU && !_後手AI && αβなし;
+    public bool Mode先CPU後AI   =>  _先手CPU &&  _後手AI  && !_先手AI  && !_後手CPU && αβなし;
+    public bool Mode先人間後αβ  => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && !_先手αβ &&  _後手αβ;
+    public bool Mode先αβ後人間  => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI &&  _先手αβ && !_後手αβ;
+    public bool Mode先αβ後CPU   =>  _先手αβ  &&  _後手CPU;
+    public bool Mode先CPU後αβ   =>  _先手CPU &&  _後手αβ;
     public bool AIモデル読み込み済み => _AIプレイヤー is not null;
 
     // 思考時間表示
@@ -133,6 +155,10 @@ public class C対局VM : INotifyPropertyChanged
     public ICommand 先AI後人間コマンド  { get; }
     public ICommand 先AI後CPUコマンド   { get; }
     public ICommand 先CPU後AIコマンド   { get; }
+    public ICommand 先人間後αβコマンド { get; }
+    public ICommand 先αβ後人間コマンド { get; }
+    public ICommand 先αβ後CPUコマンド  { get; }
+    public ICommand 先CPU後αβコマンド  { get; }
 
     // 棋譜ナビゲーションコマンド
     public ICommand 最初の手コマンド    { get; }
@@ -170,6 +196,10 @@ public class C対局VM : INotifyPropertyChanged
         先AI後人間コマンド   = new CRelayCommand(() => SetAI対局者(先手AI: true,  後手AI: false));
         先AI後CPUコマンド    = new CRelayCommand(() => SetAI対CPU対局者(先手AI: true));
         先CPU後AIコマンド    = new CRelayCommand(() => SetAI対CPU対局者(先手AI: false));
+        先人間後αβコマンド  = new CRelayCommand(() => Setαβ対局者(先手αβ: false, 後手αβ: true));
+        先αβ後人間コマンド  = new CRelayCommand(() => Setαβ対局者(先手αβ: true,  後手αβ: false));
+        先αβ後CPUコマンド   = new CRelayCommand(() => Setαβ対CPU対局者(先手αβ: true));
+        先CPU後αβコマンド   = new CRelayCommand(() => Setαβ対CPU対局者(先手αβ: false));
         最初の手コマンド     = new CRelayCommand(() => 棋譜位置へ移動(0));
         前の手コマンド       = new CRelayCommand(() => 棋譜位置へ移動(_再生位置 - 1));
         次の手コマンド       = new CRelayCommand(() => 棋譜位置へ移動(_再生位置 + 1));
@@ -178,6 +208,8 @@ public class C対局VM : INotifyPropertyChanged
 
         // 初期局面を棋譜の0手目として記録
         _棋譜SFENs.Add(_盤面.ToSFEN());
+        _棋譜ハッシュ.Add(_盤面.ComputeZobristHash());
+        _棋譜後手番.Add(_盤面.手番 == E手番.後手);
 
         _タイマー = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _タイマー.Tick += (_, _) =>
@@ -209,9 +241,17 @@ public class C対局VM : INotifyPropertyChanged
         _対局開始済み = false;
         OnPropertyChanged(nameof(先手時間表示));
         OnPropertyChanged(nameof(後手時間表示));
+        _千日手 = false;
+        _千日手敗者 = null;
+        _局面頻度.Clear();
+        _王手状態履歴.Clear();
+        _棋譜ハッシュ.Clear();
+        _棋譜後手番.Clear();
         ゲームオーバー = false;
         _棋譜SFENs.Clear();
         _棋譜SFENs.Add(_盤面.ToSFEN());
+        _棋譜ハッシュ.Add(_盤面.ComputeZobristHash());
+        _棋譜後手番.Add(_盤面.手番 == E手番.後手);
         _再生位置 = -1;
         Notify棋譜Changed();
         Try自動();
@@ -221,6 +261,7 @@ public class C対局VM : INotifyPropertyChanged
     {
         _先手CPU = 先手CPU; _後手CPU = 後手CPU;
         _先手AI  = false;   _後手AI  = false;
+        _先手αβ  = false;   _後手αβ  = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -230,6 +271,7 @@ public class C対局VM : INotifyPropertyChanged
         if (_AIプレイヤー is null) return;
         _先手AI = 先手AI; _後手AI = 後手AI;
         _先手CPU = false; _後手CPU = false;
+        _先手αβ  = false; _後手αβ  = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -239,6 +281,25 @@ public class C対局VM : INotifyPropertyChanged
         if (_AIプレイヤー is null) return;
         _先手AI  =  先手AI; _後手AI  = !先手AI;
         _先手CPU = !先手AI; _後手CPU =  先手AI;
+        _先手αβ  = false;   _後手αβ  = false;
+        NotifyモードChanged();
+        Try自動();
+    }
+
+    private void Setαβ対局者(bool 先手αβ, bool 後手αβ)
+    {
+        _先手αβ = 先手αβ; _後手αβ = 後手αβ;
+        _先手AI  = false; _後手AI  = false;
+        _先手CPU = false; _後手CPU = false;
+        NotifyモードChanged();
+        Try自動();
+    }
+
+    private void Setαβ対CPU対局者(bool 先手αβ)
+    {
+        _先手αβ  =  先手αβ; _後手αβ  = !先手αβ;
+        _先手CPU = !先手αβ; _後手CPU =  先手αβ;
+        _先手AI  = false;   _後手AI  = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -261,13 +322,17 @@ public class C対局VM : INotifyPropertyChanged
         OnPropertyChanged(nameof(Mode先AI後人間));
         OnPropertyChanged(nameof(Mode先AI後CPU));
         OnPropertyChanged(nameof(Mode先CPU後AI));
+        OnPropertyChanged(nameof(Mode先人間後αβ));
+        OnPropertyChanged(nameof(Mode先αβ後人間));
+        OnPropertyChanged(nameof(Mode先αβ後CPU));
+        OnPropertyChanged(nameof(Mode先CPU後αβ));
     }
 
     // ===== 自動実行（CPU / AI） =====
 
     private bool Is自動番()
-        => (_盤面.手番 == E手番.先手 && (_先手CPU || _先手AI)) ||
-           (_盤面.手番 == E手番.後手 && (_後手CPU || _後手AI));
+        => (_盤面.手番 == E手番.先手 && (_先手CPU || _先手AI || _先手αβ)) ||
+           (_盤面.手番 == E手番.後手 && (_後手CPU || _後手AI || _後手αβ));
 
     private void Stop自動対局()
     {
@@ -298,6 +363,13 @@ public class C対局VM : INotifyPropertyChanged
             return;
         }
 
+        if (_先手αβ || _後手αβ)
+        {
+            Stop自動対局();
+            if (!_ゲームオーバー) _ = αβ対局Async();
+            return;
+        }
+
         Stop自動対局();
         while (!_ゲームオーバー && Is自動番())
         {
@@ -325,6 +397,46 @@ public class C対局VM : INotifyPropertyChanged
                     var player = _AIプレイヤー;
                     var board  = _盤面;
                     手 = await Task.Run(() => player.Get手(board), cts.Token);
+                }
+                else
+                {
+                    手 = _ランダムAI.Get手(_盤面);
+                    await Task.Delay(150, cts.Token);
+                }
+                if (cts.Token.IsCancellationRequested) break;
+                if (手 == null) { ゲームオーバー = true; break; }
+                Apply手(手.Value);
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (_自動対局CTS == cts) _自動対局CTS = null;
+        }
+    }
+
+    private async Task αβ対局Async()
+    {
+        var cts = new CancellationTokenSource();
+        _自動対局CTS = cts;
+        try
+        {
+            while (!_ゲームオーバー && Is自動番() && !cts.Token.IsCancellationRequested)
+            {
+                bool useαβ = _盤面.手番 == E手番.先手 ? _先手αβ : _後手αβ;
+                bool useAI = _盤面.手番 == E手番.先手 ? _先手AI : _後手AI;
+                S手? 手;
+                if (useαβ)
+                {
+                    // SFEN スナップショットをとって別盤面で探索（UIスレッドとの競合を防ぐ）
+                    var sfen = _盤面.ToSFEN();
+                    手 = await Task.Run(() => _αβAI.Get手(new C盤面(sfen)), cts.Token);
+                }
+                else if (useAI && _AIプレイヤー is not null)
+                {
+                    var player = _AIプレイヤー;
+                    var sfen   = _盤面.ToSFEN();
+                    手 = await Task.Run(() => player.Get手(new C盤面(sfen)), cts.Token);
                 }
                 else
                 {
@@ -457,6 +569,8 @@ public class C対局VM : INotifyPropertyChanged
         {
             var 手 = バッファ[i];
             if (!手.Is打ち || 手.Get打ち駒 != 駒種) continue;
+            if (Is連続王手禁手(手)) continue;
+            if (Is打歩詰め_禁手考慮(手)) continue;
             var 先Byte = 手.Get移動先.Byte値;
             if (!_移動先一覧.ContainsKey(先Byte)) _移動先一覧[先Byte] = [];
             _移動先一覧[先Byte].Add(手);
@@ -488,6 +602,7 @@ public class C対局VM : INotifyPropertyChanged
         {
             var 手 = バッファ[i];
             if (手.Is打ち || 手.Get移動元.Byte値 != 升Byte) continue;
+            if (Is連続王手禁手(手)) continue;
             var 先Byte = 手.Get移動先.Byte値;
             if (!_移動先一覧.ContainsKey(先Byte)) _移動先一覧[先Byte] = [];
             _移動先一覧[先Byte].Add(手);
@@ -670,9 +785,133 @@ public class C対局VM : INotifyPropertyChanged
         _棋譜SFENs.Add(_盤面.ToSFEN());
         Notify棋譜Changed();
 
+        // ハッシュと手番を記録（千日手・連続王手判定用）
+        ulong hash = _盤面.ComputeZobristHash();
+        _棋譜ハッシュ.Add(hash);
+        _棋譜後手番.Add(_盤面.手番 == E手番.後手);
+
+        // 王手状態を記録（連続王手判定用: 現手番側が王手されているか）
+        _王手状態履歴.Add(!C合法手生成器.Is自玉安全(_盤面, _盤面.手番));
+
+        // 千日手判定（同一局面が4回出現）
+        _局面頻度.TryGetValue(hash, out int 頻度);
+        _局面頻度[hash] = 頻度 + 1;
+        if (頻度 + 1 >= 4)
+        {
+            _千日手敗者 = 連続王手判定(hash);
+            _千日手     = _千日手敗者 == null;
+            ゲームオーバー = true;
+            return;
+        }
+
         Span<S手> バッファ = stackalloc S手[C合法手生成器.最大手数];
         if (C合法手生成器.Get合法手(_盤面, バッファ) == 0)
             ゲームオーバー = true;
+    }
+
+    // 同一局面4回出現時に連続王手をしていた側を返す（null = 普通の千日手／引き分け）
+    private E手番? 連続王手判定(ulong hash)
+    {
+        // 4つの出現インデックスを収集（_棋譜ハッシュ から）
+        var occurrences = Enumerable.Range(0, _棋譜ハッシュ.Count)
+            .Where(i => _棋譜ハッシュ[i] == hash)
+            .ToList();
+        if (occurrences.Count < 4) return null;
+
+        int first = occurrences[0];
+        int last  = occurrences[3];
+
+        // first+1 〜 last の各局面で王手状態を集計
+        int 後手番王手 = 0, 後手番合計 = 0;
+        int 先手番王手 = 0, 先手番合計 = 0;
+        for (int j = first + 1; j <= last; j++)
+        {
+            if (j - 1 >= _王手状態履歴.Count) break;
+            bool is後手番 = j < _棋譜後手番.Count && _棋譜後手番[j];
+            bool 王手中   = _王手状態履歴[j - 1];
+            if (is後手番) { 後手番合計++; if (王手中) 後手番王手++; }
+            else          { 先手番合計++; if (王手中) 先手番王手++; }
+        }
+
+        // 先手が連続王手 = 後手番のすべてで後手が王手状態
+        bool 先手連続王手 = 後手番合計 > 0 && 後手番王手 == 後手番合計;
+        // 後手が連続王手 = 先手番のすべてで先手が王手状態
+        bool 後手連続王手 = 先手番合計 > 0 && 先手番王手 == 先手番合計;
+
+        if (先手連続王手 && !後手連続王手) return E手番.先手;  // 先手の反則負け
+        if (後手連続王手 && !先手連続王手) return E手番.後手;  // 後手の反則負け
+        return null;  // 両者連続王手 or 普通の千日手 → 引き分け
+    }
+
+    // ── 連続王手禁手・打歩詰め（人間プレイヤー向けフィルタ）──────────────────
+    // Zobrist ハッシュ使用で Apply 後 O(81) の計算のみ。体感ゼロ。
+
+    private bool Is連続王手禁手(S手 手)
+    {
+        var 取消 = _盤面.Apply(手);
+        ulong hash = _盤面.ComputeZobristHash();
+        _局面頻度.TryGetValue(hash, out int 頻度);
+        bool 禁手 = false;
+
+        if (頻度 >= 3)
+        {
+            var 指した側 = _盤面.手番 == E手番.後手 ? E手番.先手 : E手番.後手;
+            bool 新後手番 = _盤面.手番 == E手番.後手;
+            bool 新王手中 = !C合法手生成器.Is自玉安全(_盤面, _盤面.手番);
+
+            int first = -1;
+            for (int i = 0; i < _棋譜ハッシュ.Count; i++)
+                if (_棋譜ハッシュ[i] == hash) { first = i; break; }
+
+            if (first >= 0)
+            {
+                int 後手番王手 = 0, 後手番合計 = 0;
+                int 先手番王手 = 0, 先手番合計 = 0;
+                int last = _棋譜ハッシュ.Count;
+
+                for (int j = first + 1; j <= last; j++)
+                {
+                    bool is後手番 = j < _棋譜後手番.Count ? _棋譜後手番[j] : 新後手番;
+                    bool 王手中   = j < _棋譜後手番.Count
+                        ? (j - 1 < _王手状態履歴.Count && _王手状態履歴[j - 1])
+                        : 新王手中;
+                    if (is後手番) { 後手番合計++; if (王手中) 後手番王手++; }
+                    else          { 先手番合計++; if (王手中) 先手番王手++; }
+                }
+
+                bool 先手連続 = 後手番合計 > 0 && 後手番王手 == 後手番合計;
+                bool 後手連続 = 先手番合計 > 0 && 先手番王手 == 先手番合計;
+                if (指した側 == E手番.先手 && 先手連続 && !後手連続) 禁手 = true;
+                if (指した側 == E手番.後手 && 後手連続 && !先手連続) 禁手 = true;
+            }
+        }
+
+        _盤面.Undo(手, 取消);
+        return 禁手;
+    }
+
+    private bool Is打歩詰め_禁手考慮(S手 手)
+    {
+        if (!手.Is打ち || 手.Get打ち駒 != E駒種.歩兵) return false;
+
+        var 先 = 手.Get移動先;
+        var 相手 = _盤面.手番 == E手番.先手 ? E手番.後手 : E手番.先手;
+        var 玉 = _盤面.Find玉(相手);
+        bool 利く = _盤面.手番 == E手番.先手
+            ? (玉.Is有効 && 玉.列 == 先.列 && 玉.段 == 先.段 - 1)
+            : (玉.Is有効 && 玉.列 == 先.列 && 玉.段 == 先.段 + 1);
+        if (!利く) return false;
+
+        var 取消 = _盤面.Apply(手);
+        Span<S手> buf = stackalloc S手[C合法手生成器.最大手数];
+        int n = C合法手生成器.Get合法手(_盤面, buf);
+
+        bool 全て禁手 = n > 0;
+        for (int i = 0; i < n && 全て禁手; i++)
+            if (!Is連続王手禁手(buf[i])) 全て禁手 = false;
+
+        _盤面.Undo(手, 取消);
+        return 全て禁手;
     }
 
     private void Update持ち駒枚数()

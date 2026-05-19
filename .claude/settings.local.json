@@ -8,8 +8,31 @@
       "Bash(dotnet test *)",
       "Bash(dotnet build *)",
       "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $env:PATH = \"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\Installer;\" + $env:PATH; dotnet publish 変成将棋.Engine.Native -r win-x64 -c Release --self-contained 2>&1 | Select-Object -Last 10)",
-      "PowerShell($dll = \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋.Engine.Native\\\\bin\\\\Release\\\\net8.0\\\\win-x64\\\\publish\\\\shogi_engine.dll\"; if \\(Test-Path $dll\\) { $f = Get-Item $dll; Write-Output \"$\\($f.Name\\)  $\\([math]::Round\\($f.Length/1MB,1\\)\\) MB  $\\($f.LastWriteTime\\)\" } else { Write-Output \"Not found\" })"
+      "PowerShell($dll = \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋.Engine.Native\\\\bin\\\\Release\\\\net8.0\\\\win-x64\\\\publish\\\\shogi_engine.dll\"; if \\(Test-Path $dll\\) { $f = Get-Item $dll; Write-Output \"$\\($f.Name\\)  $\\([math]::Round\\($f.Length/1MB,1\\)\\) MB  $\\($f.LastWriteTime\\)\" } else { Write-Output \"Not found\" })",
+      "Bash(dir \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋\" /s /b)",
+      "Read(//c/Users/nobuh/source/�ϑ�����.vscode/**)",
+      "Read(//c/Users/nobuh/source/**)",
+      "Bash(Select-String -Pattern \"ms|秒|局面|平均|Passed|Failed\")",
+      "Bash(Select-Object -Last 20)",
+      "WebFetch(domain:github.com)",
+      "PowerShell($f = \"C:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\定跡\\\\定跡書.db\"; $info = Get-Item $f; Write-Output \"$\\($info.Name\\)  $\\([math]::Round\\($info.Length/1MB,1\\)\\) MB\"; Get-Content $f -TotalCount 10)",
+      "PowerShell(\\(Get-Command python -ErrorAction SilentlyContinue\\).Source; \\(Get-Command python3 -ErrorAction SilentlyContinue\\).Source; \\(Get-Command py -ErrorAction SilentlyContinue\\).Source)",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python.exe\" --version 2>&1)",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\miniconda3\\\\python.exe\",\"$env:USERPROFILE\\\\anaconda3\\\\python.exe\",\"C:\\\\ProgramData\\\\miniconda3\\\\python.exe\",\"C:\\\\ProgramData\\\\anaconda3\\\\python.exe\" -ErrorAction SilentlyContinue | Select-Object FullName; Get-ChildItem \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Programs\" -ErrorAction SilentlyContinue | Select Name)",
+      "Bash(where python *)",
+      "Bash(C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe --version)",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" --version)",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" \"C:\\\\Users\\\\nobuh\\\\source\\\\�ϑ�����.vscode\\\\ml\\\\tools\\\\���H��Տ�.py\" --input \"C:\\\\Users\\\\nobuh\\\\source\\\\�ϑ�����.vscode\\\\���\\\\��Տ�.db\" --output \"C:\\\\Users\\\\nobuh\\\\source\\\\�ϑ�����.vscode\\\\���\\\\�ϐ�����_��Տ�.db\")",
+      "Bash(awk '{print $NF}')",
+      "Bash(powershell.exe -Command \"Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors | Format-List\")",
+      "PowerShell(Get-Process | Where-Object { $_.Name -match \"python|dotnet\" } | Select-Object Id, Name, CPU | Format-Table -AutoSize)",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import json; nb=json.load\\(open\\('ml/colab_train.ipynb', encoding='utf-8'\\)\\); print\\(len\\(nb['cells']\\), 'cells'\\); [print\\(i, nb['cells'][i].get\\('source',''\\)[:80].replace\\(chr\\(10\\),' '\\)\\) for i in range\\(len\\(nb['cells']\\)\\)]\")",
+      "PowerShell(Test-Path \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋.AI\\\\nnue_weights.bin\"; \\(Get-Item \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋.AI\\\\nnue_weights.bin\"\\).Length)"
     ],
-    "defaultMode": "bypassPermissions"
+    "defaultMode": "bypassPermissions",
+    "additionalDirectories": [
+      "C:\\Users\\nobuh\\source\\�ϑ�����.vscode\\ml\\checkpoints",
+      "C:\\Users\\nobuh\\source\\�ϑ�����.vscode\\ml\\checkpoints\\teacher_kifu\\iter0001"
+    ]
   }
 }

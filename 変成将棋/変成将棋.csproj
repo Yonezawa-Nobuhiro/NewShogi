@@ -12,6 +12,9 @@
     <Content Include="局面設定.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\定跡\変成将棋_定跡書.db" Link="変成将棋_定跡書.db">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\変成将棋.Engine\変成将棋.Engine.csproj"/>

@@ -100,6 +100,24 @@
                           IsEnabled="{Binding AIモデル読み込み済み}"
                           IsCheckable="True"
                           IsChecked="{Binding Mode先CPU後AI, Mode=OneWay}"/>
+                <Separator Background="#555"/>
+                <MenuItem Header="先手人間 ／ 後手αβ"
+                          Command="{Binding 先人間後αβコマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先人間後αβ, Mode=OneWay}"/>
+                <MenuItem Header="先手αβ ／ 後手人間"
+                          Command="{Binding 先αβ後人間コマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先αβ後人間, Mode=OneWay}"/>
+                <Separator Background="#555"/>
+                <MenuItem Header="先手αβ ／ 後手CPU"
+                          Command="{Binding 先αβ後CPUコマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先αβ後CPU, Mode=OneWay}"/>
+                <MenuItem Header="先手CPU ／ 後手αβ"
+                          Command="{Binding 先CPU後αβコマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先CPU後αβ, Mode=OneWay}"/>
             </MenuItem>
             <Separator Background="#555"/>
             <MenuItem Header="AIモデルを読み込む..." Click="OnAIモデル読み込みClick"/>

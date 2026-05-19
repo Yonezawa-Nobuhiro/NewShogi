@@ -13,8 +13,15 @@ public static class C合法手生成器
     public static int Get合法手(C盤面 盤面, Span<S手> バッファ)
     {
         int 手数 = Generate擬似合法手(盤面, バッファ);
-        return Filter王手放置(盤面, バッファ, 手数);
+        手数 = Filter王手放置(盤面, バッファ, 手数);
+        手数 = Filter打歩詰(盤面, バッファ, 手数);
+        return 手数;
     }
+
+    // 手を指した後（Apply後）に指した側の玉が安全かどうか判定する。
+    // αβ探索の内部ループで王手放置チェックに使用する（王手放置なら false）。
+    public static bool Is自玉安全(C盤面 盤面, E手番 指した側)
+        => !Is王手放置(盤面, 指した側);
 
     // 王手放置チェックなしの擬似合法手を生成する
     public static int Generate擬似合法手(C盤面 盤面, Span<S手> バッファ)
@@ -288,6 +295,59 @@ public static class C合法手生成器
 
         // 相手玉が自陣三段目以内（= 相手から見た敵陣三段目以内）
         return Is敵陣(相手手番, 相手玉位置);
+    }
+
+    // ===== 打歩詰フィルタ =====
+    // 歩を打って相手玉が詰みになる手（打歩詰）は非合法なので除外する。
+    // 内部で Generate擬似合法手 を使用し Get合法手 への再帰を避ける。
+
+    private static int Filter打歩詰(C盤面 盤面, Span<S手> バッファ, int 手数)
+    {
+        var 手番 = 盤面.手番;
+        var 相手 = 手番 == E手番.先手 ? E手番.後手 : E手番.先手;
+
+        // 打歩で玉に利く唯一の升を特定（玉位置から逆算）
+        var 玉 = 盤面.Find玉(相手);
+        if (!玉.Is有効) return 手数;
+        int 打歩段 = 手番 == E手番.先手 ? 玉.段 + 1 : 玉.段 - 1;
+        if (打歩段 < 1 || 打歩段 > 9) return 手数;
+
+        // バッファ内でその升への歩打ちを探す（二歩制約より高々1手）
+        int 対象 = -1;
+        for (int i = 0; i < 手数; i++)
+        {
+            var 手 = バッファ[i];
+            if (手.Is打ち && 手.Get打ち駒 == E駒種.歩兵)
+            {
+                var 先 = 手.Get移動先;
+                if (先.列 == 玉.列 && 先.段 == 打歩段) { 対象 = i; break; }
+            }
+        }
+        if (対象 < 0) return 手数;  // 打歩詰候補なし
+
+        // 打った後に詰みなら除外（バッファの該当インデックスを詰める）
+        var 取消 = 盤面.Apply(バッファ[対象]);
+        bool は詰み = Is擬似詰み(盤面, 相手);
+        盤面.Undo(バッファ[対象], 取消);
+
+        if (!は詰み) return 手数;
+        for (int i = 対象; i < 手数 - 1; i++) バッファ[i] = バッファ[i + 1];
+        return 手数 - 1;
+    }
+
+    // Generate擬似合法手 + Is自玉安全 で詰みを判定（Get合法手を呼ばないので再帰なし）
+    private static bool Is擬似詰み(C盤面 盤面, E手番 手番)
+    {
+        Span<S手> buf = stackalloc S手[最大手数];
+        int n = Generate擬似合法手(盤面, buf);
+        for (int i = 0; i < n; i++)
+        {
+            var 取消 = 盤面.Apply(buf[i]);
+            bool 安全 = Is自玉安全(盤面, 手番);
+            盤面.Undo(buf[i], 取消);
+            if (安全) return false;
+        }
+        return true;
     }
 
     // ===== 王手放置フィルタ =====
