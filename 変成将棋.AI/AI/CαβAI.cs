@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using 変成将棋.Models;
+using 変成将棋.NNUE;
 
 namespace 変成将棋.AI;
 
@@ -57,16 +58,19 @@ public record αβパラメータ
 /// </summary>
 public sealed class CαβAI : IプレイヤーAI
 {
-    private const int 詰みスコア = 10_000_000;
+    private const int 詰点数 = 10_000_000;
 
     private readonly αβパラメータ _p;
     private readonly int[] _駒価値 = new int[17];
     private readonly C定跡書? _定跡書;
-    private readonly CNNUE評価器? _nnue;
+    private readonly CNNUE評価器?     _nnue;   // HalfKP NNUE（nnue_weights_halfkp.bin）
+    private readonly CNNUE評価器Int8? _nnue8;  // INT8 版（将来用）
 
-    // インクリメンタル NNUE アキュムレータスタック（探索深さ上限 50）
-    private readonly float[][]? _acc;   // [depth][L1_SIZE]
-    private int _accDepth;
+    // アキュムレータスタック（インクリメンタル更新用）
+    private readonly float[][]? _加算器_先手;    // [探索深さ+2][L1数]
+    private readonly float[][]? _加算器_後手;    // [探索深さ+2][L1数]
+    private readonly int[]?     _局面区分_先手;    // バケット番号スタック（先手視点）
+    private readonly int[]?     _局面区分_後手;    // バケット番号スタック（後手視点）
 
     public CαβAI(string? paramsPath = null, string? bookPath = null)
     {
@@ -76,12 +80,21 @@ public sealed class CαβAI : IプレイヤーAI
         var dir = paramsPath != null
             ? Path.GetDirectoryName(Path.GetFullPath(paramsPath)) ?? AppContext.BaseDirectory
             : AppContext.BaseDirectory;
-        _nnue = CNNUE評価器.Load(Path.Combine(dir, "nnue_weights.bin"));
+        _nnue  = CNNUE評価器.Load(Path.Combine(dir, "nnue_weights_halfkp.bin"));
+        _nnue8 = CNNUE評価器Int8.Load(Path.Combine(dir, "nnue_weights_int8.bin"));
+
         if (_nnue != null)
         {
-            _acc = new float[50][];
-            for (int i = 0; i < 50; i++)
-                _acc[i] = new float[CNNUE評価器.L1_SIZE];
+            int stackSize = _p.探索深さ + 2;
+            _加算器_先手 = new float[stackSize][];
+            _加算器_後手 = new float[stackSize][];
+            _局面区分_先手 = new int[stackSize];
+            _局面区分_後手 = new int[stackSize];
+            for (int d = 0; d < stackSize; d++)
+            {
+                _加算器_先手[d] = new float[CNNUE評価器.L1数];
+                _加算器_後手[d] = new float[CNNUE評価器.L1数];
+            }
         }
 
         var v = _p.駒価値;
@@ -105,159 +118,167 @@ public sealed class CαβAI : IプレイヤーAI
 
     // ── IプレイヤーAI ─────────────────────────────────────────────────
 
-    public S手? Get手(C盤面 盤面)
+    public S手? Get手(C盤面 盤面) => Get手とスコア(盤面).最善手;
+
+    /// <summary>現局面を αβ 探索して手番側視点の評価値を返す。</summary>
+    public int Evaluate(C盤面 盤面) => Get手とスコア(盤面).点数;
+
+    /// <summary>最善手と評価値を1回の探索で返す。</summary>
+    public (S手? 最善手, int 点数) Get手とスコア(C盤面 盤面)
     {
-        // 定跡書を優先参照（条件を満たす間のみ）
         if (_定跡書 != null)
         {
             var 定跡手 = _定跡書.QueryS手(盤面);
-            if (定跡手.HasValue) return 定跡手.Value;
+            if (定跡手.HasValue) return (定跡手.Value, 0);
         }
 
         Span<S手> buf = stackalloc S手[C合法手生成器.最大手数];
         int n = C合法手生成器.Get合法手(盤面, buf);
-        if (n == 0) return null;
-        if (n == 1) return buf[0];
+        if (n == 0) return (null, -詰点数);
 
-        // ルートアキュムレータを初期化（反復深化の都度リセット）
-        if (_nnue != null && _acc != null)
-        {
-            _accDepth = 0;
-            _nnue.ComputeAccum(盤面, _acc[0]);
-        }
-
-        // 反復深化：深さ 1 から _p.探索深さ まで順に探索
         S手 最善手 = buf[0];
+        int 点数   = 0;
         for (int 深さ = 1; 深さ <= _p.探索深さ; 深さ++)
-        {
-            _accDepth = 0;  // 各深さの探索開始前にリセット
-            最善手 = SearchRoot(盤面, buf[..n], 深さ);
-        }
+            (最善手, 点数) = SearchRoot(盤面, buf[..n], 深さ);
 
-        return 最善手;
+        return (最善手, 点数);
     }
 
     public void Dispose() { }
 
     // ── ルートノード探索 ──────────────────────────────────────────────
 
-    private S手 SearchRoot(C盤面 盤面, Span<S手> moves, int 深さ)
+    private (S手 最善手, int 点数) SearchRoot(C盤面 盤面, Span<S手> 候補手集, int 深度)
     {
-        SortMoves(盤面, moves);
+        S手 最善手 = 候補手集[0];
+        int α  = -詰点数;
+        int n  = 候補手集.Length;
 
-        S手 最善手 = moves[0];
-        int alpha  = -詰みスコア;
-
-        foreach (var 手 in moves)
+        if (_nnue != null)
         {
-            // SearchRoot は Get合法手 済みなので全手合法
-            var 指した側Root = 盤面.手番;
-            var 取消 = 盤面.Apply(手);
-            if (_acc != null)
-            {
-                E駒種? mk = 手.Is打ち ? null : (盤面.Get駒(手.Get移動先) is { } d
-                    ? (手.Is成り ? C駒.Get成り前(d.種類) : d.種類) : (E駒種?)null);
-                Array.Copy(_acc[_accDepth], _acc[_accDepth + 1], CNNUE評価器.L1_SIZE);
-                _accDepth++;
-                _nnue!.UpdateAccumAfterApply(_acc[_accDepth], 手, 指した側Root, mk, 取消.取り駒, 取消.中間取り駒);
-            }
-            int score = -Search(盤面, 深さ - 1, -詰みスコア, -alpha);
-            盤面.Undo(手, 取消);
-            if (_acc != null) _accDepth--;
+            var 先手玉種 = 盤面.Get駒(盤面.Find玉(E手番.先手))!.種類;
+            var 後手玉種 = 盤面.Get駒(盤面.Find玉(E手番.後手))!.種類;
+            _局面区分_先手![0] = CNNUE評価器.局面区分番号取得(先手玉種, 後手玉種);
+            _局面区分_後手![0] = CNNUE評価器.局面区分番号取得(後手玉種, 先手玉種);
+            _nnue.加算器計算(盤面, E手番.先手, _局面区分_先手[0], _加算器_先手![0]);
+            _nnue.加算器計算(盤面, E手番.後手, _局面区分_後手[0], _加算器_後手![0]);
+        }
 
-            if (score > alpha)
+        Span<int> 点数集 = stackalloc int[n];
+        for (int i = 0; i < n; i++) 点数集[i] = ScoreMove(盤面, 候補手集[i]);
+
+        for (int i = 0; i < n; i++)
+        {
+            int best = i;
+            for (int j = i + 1; j < n; j++)
+                if (点数集[j] > 点数集[best]) best = j;
+            if (best != i)
             {
-                alpha  = score;
-                最善手 = 手;
+                (候補手集[i],  候補手集[best])  = (候補手集[best],  候補手集[i]);
+                (点数集[i], 点数集[best]) = (点数集[best], 点数集[i]);
+            }
+
+            var 取消 = 盤面.Apply(候補手集[i]);
+            if (_nnue != null)
+            {
+                Copy加算器(0);
+                Update加算器(盤面, 0, 候補手集[i], 取消);
+            }
+            int 点数 = -Search(盤面, 深度 - 1, -詰点数, -α, 1);
+            盤面.Undo(候補手集[i], 取消);
+
+            if (点数 > α)
+            {
+                α  = 点数;
+                最善手 = 候補手集[i];
             }
         }
-        return 最善手;
+        return (最善手, α);
     }
 
     // ── Negamax + αβ枝刈り ───────────────────────────────────────────
     // 内部ノードは Generate擬似合法手 + Apply後インライン王手放置チェックを使う。
     // これにより Get合法手（擬似生成+フィルタで Apply/Undo 2倍）を避け約2倍速になる。
 
-    private int Search(C盤面 盤面, int 残深さ, int alpha, int beta)
+    private int Search(C盤面 盤面, int 残深さ, int α, int β, int 加算器深度)
     {
+        // 残深さがもはやない場合
         if (残深さ <= 0)
         {
-            return _acc != null
-                ? _nnue!.EvaluateFromAccum(_acc[_accDepth])
-                : (_nnue != null ? _nnue.Evaluate(盤面) : C評価関数.Evaluate(盤面, _p, _駒価値));
+            return _nnue != null
+                ? _nnue.加算器から評価(_加算器_先手![加算器深度], _加算器_後手![加算器深度], 盤面.手番)
+                : C評価関数.Evaluate(盤面, _p, _駒価値);
         }
 
-        var 指した側 = 盤面.手番;
+        Span<S手> 候補手集 = stackalloc S手[C合法手生成器.最大手数];
+        int 合法手数 = C合法手生成器.Generate擬似合法手(盤面, 候補手集);
 
-        Span<S手> moves = stackalloc S手[C合法手生成器.最大手数];
-        int n = C合法手生成器.Generate擬似合法手(盤面, moves);
-
-        SortMoves(盤面, moves[..n]);
+        Span<int> scores = stackalloc int[合法手数];
+        for (int i = 0; i < 合法手数; i++)
+            scores[i] = ScoreMove(盤面, 候補手集[i]);
 
         bool 合法手あり = false;
-        for (int i = 0; i < n; i++)
-        {
-            var 取消 = 盤面.Apply(moves[i]);
-
-            if (!C合法手生成器.Is自玉安全(盤面, 指した側))
+        for (int i = 0; i < 合法手数; i++){
+            int best = i;
+            for (int j = i + 1; j < 合法手数; j++)
+                if (scores[j] > scores[best]) best = j;
+            if (best != i)
             {
-                盤面.Undo(moves[i], 取消);
+                (候補手集[i],  候補手集[best])  = (候補手集[best],  候補手集[i]);
+                (scores[i], scores[best]) = (scores[best], scores[i]);
+            }
+
+            var 取消 = 盤面.Apply(候補手集[i]);
+            if (!C合法手生成器.Is自玉安全(盤面, 盤面.手番))
+            {
+                盤面.Undo(候補手集[i], 取消);
                 continue;
             }
-
-            // 合法手確定後にアキュムを更新
-            if (_acc != null)
-            {
-                E駒種? mk = moves[i].Is打ち ? null : (盤面.Get駒(moves[i].Get移動先) is { } d
-                    ? (moves[i].Is成り ? C駒.Get成り前(d.種類) : d.種類) : (E駒種?)null);
-                Array.Copy(_acc[_accDepth], _acc[_accDepth + 1], CNNUE評価器.L1_SIZE);
-                _accDepth++;
-                _nnue!.UpdateAccumAfterApply(_acc[_accDepth], moves[i], 指した側, mk, 取消.取り駒, 取消.中間取り駒);
-            }
-
             合法手あり = true;
-            int score = -Search(盤面, 残深さ - 1, -beta, -alpha);
-            盤面.Undo(moves[i], 取消);
-            if (_acc != null) _accDepth--;
-
-            if (score >= beta)  return beta;
-            if (score > alpha)  alpha = score;
+            if (_nnue != null)
+            {
+                Copy加算器(加算器深度);
+                Update加算器(盤面, 加算器深度, 候補手集[i], 取消);
+            }
+            int score = -Search(盤面, 残深さ - 1, -β, -α, 加算器深度 + 1);
+            盤面.Undo(候補手集[i], 取消);
+            if (score >= β) return β;
+            if (score > α)  α = score;
         }
 
-        if (!合法手あり) return -詰みスコア;
-        return alpha;
+        if (!合法手あり)
+            return -詰点数;
+        else
+            return α;
     }
 
-    // ── 手順並べ替え（駒取り・成り優先）─────────────────────────────
+    // ── アキュムレータ差分更新ヘルパー ──────────────────────────────────
 
-    private void SortMoves(C盤面 盤面, Span<S手> moves)
+    private void Copy加算器(int 親深さ)
     {
-        Span<int> scores = stackalloc int[moves.Length];
-        for (int i = 0; i < moves.Length; i++)
-        {
-            var 手 = moves[i];
-            if (手.Is打ち) { scores[i] = 0; continue; }
+        Array.Copy(_加算器_先手![親深さ], _加算器_先手[親深さ + 1], CNNUE評価器.L1数);
+        Array.Copy(_加算器_後手![親深さ], _加算器_後手[親深さ + 1], CNNUE評価器.L1数);
+    }
 
-            var 取り = 盤面.Get駒(手.Get移動先);
-            scores[i] = 取り != null
-                ? _駒価値[(int)取り.種類]       // MVV: 高価値の駒を取る手を優先
-                : 手.Is成り ? 50 : 0;           // 次点：成り手
-        }
+    private void Update加算器(C盤面 盤面, int 親深さ, S手 手, S取消情報 取消)
+    {
+        int 子深さ = 親深さ + 1;
+        var 先手玉種 = 盤面.Get駒(盤面.Find玉(E手番.先手))!.種類;
+        var 後手玉種 = 盤面.Get駒(盤面.Find玉(E手番.後手))!.種類;
+        int 新先手局面区分 = CNNUE評価器.局面区分番号取得(先手玉種, 後手玉種);
+        int 新後手局面区分 = CNNUE評価器.局面区分番号取得(後手玉種, 先手玉種);
+        _nnue!.加算器更新(盤面, E手番.先手, _局面区分_先手![親深さ], 新先手局面区分, _加算器_先手![子深さ], 手, 取消);
+        _nnue!.加算器更新(盤面, E手番.後手, _局面区分_後手![親深さ], 新後手局面区分, _加算器_後手![子深さ], 手, 取消);
+        _局面区分_先手[子深さ] = 新先手局面区分;
+        _局面区分_後手[子深さ] = 新後手局面区分;
+    }
 
-        // 挿入ソート（~600手以下で十分高速）
-        for (int i = 1; i < moves.Length; i++)
-        {
-            var h = moves[i];
-            int s = scores[i];
-            int j = i - 1;
-            while (j >= 0 && scores[j] < s)
-            {
-                moves[j + 1]  = moves[j];
-                scores[j + 1] = scores[j];
-                j--;
-            }
-            moves[j + 1]  = h;
-            scores[j + 1] = s;
-        }
+    // ── 手順スコアリング（遅延選択ソート用）─────────────────────────
+
+    private int ScoreMove(C盤面 盤面, S手 手)
+    {
+        if (手.Is打ち) return 0;
+        var 取り = 盤面.Get駒(手.Get移動先);
+        return 取り != null ? _駒価値[(int)取り.種類] : 手.Is成り ? 50 : 0;
     }
 }

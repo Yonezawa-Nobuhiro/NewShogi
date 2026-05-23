@@ -181,6 +181,59 @@ def export_weights(model: NNUE, out_path: str):
     print(f"  重みを保存: {out_path}")
 
 
+def export_weights_int8(model: NNUE, out_path: str):
+    """
+    INT8 量子化重みをエクスポートする（C# CNNUE評価器Int8 用）。
+
+    バイナリ形式:
+      Magic     : b'NNI8' (4 bytes)
+      scale_w1  : float32
+      scale_w2  : float32
+      scale_w3  : float32
+      W1_q      : FEATURE_SIZE × L1_SIZE  int8  (feature-major)
+      B1        : L1_SIZE                 float32
+      W2_q      : L2_SIZE × L1_SIZE       int8  (output-major ← MultiplyAddAdjacent 用)
+      B2        : L2_SIZE                 float32
+      W3_q      : L2_SIZE                 int8
+      B3        : float32
+    """
+    import torch
+
+    sd = model.state_dict()
+
+    def quant(t: np.ndarray) -> tuple[np.ndarray, float]:
+        scale = 127.0 / float(np.abs(t).max())
+        q = np.round(t * scale).clip(-127, 127).astype(np.int8)
+        return q, scale
+
+    # W1: Python [L1, FEAT] → C# feat-major [FEAT, L1]
+    w1_np = sd['l1.weight'].cpu().float().numpy().T.copy()   # [FEAT, L1]
+    w1_q, s1 = quant(w1_np)
+
+    # W2: Python [L2, L1] → C# input-major [L1, L2] (AXPY用に転置)
+    w2_np = sd['l2.weight'].cpu().float().numpy().T.copy()   # [L1, L2]
+    w2_q, s2 = quant(w2_np)
+
+    # W3: Python [1, L2] → [L2]
+    w3_np = sd['out.weight'].cpu().float().numpy().squeeze()
+    w3_q, s3 = quant(w3_np)
+
+    b1 = sd['l1.bias'].cpu().float().numpy().astype(np.float32)
+    b2 = sd['l2.bias'].cpu().float().numpy().astype(np.float32)
+    b3 = float(sd['out.bias'].cpu().item())
+
+    with open(out_path, 'wb') as f:
+        f.write(b'NNI8')
+        f.write(struct.pack('3f', s1, s2, s3))
+        f.write(w1_q.flatten().tobytes())
+        f.write(b1.tobytes())
+        f.write(w2_q.flatten().tobytes())  # [L2_SIZE, L1_SIZE]
+        f.write(b2.tobytes())
+        f.write(w3_q.flatten().tobytes())
+        f.write(struct.pack('f', b3))
+    print(f"  INT8重みを保存: {out_path}  (W1:{w1_q.nbytes//1024}KB W2:{w2_q.nbytes//1024}KB)")
+
+
 # ── 学習 ─────────────────────────────────────────────────────────────────────
 
 def train(data_path: str, out_path: str, epochs: int = 30, batch: int = 2048, lr: float = 1e-3):
@@ -232,6 +285,7 @@ def train(data_path: str, out_path: str, epochs: int = 30, batch: int = 2048, lr
         if va_loss < best_val:
             best_val = va_loss
             export_weights(model, out_path)
+            export_weights_int8(model, out_path.replace('.bin', '_int8.bin'))
 
     print(f"\n最良 val_loss: {best_val:.5f}")
     print(f"出力: {out_path}")

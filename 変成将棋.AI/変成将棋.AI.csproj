@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\変成将棋.Engine\変成将棋.Engine.csproj"/>
+    <ProjectReference Include="..\変成将棋.NNUE\変成将棋.NNUE.csproj"/>
   </ItemGroup>
   <ItemGroup>
     <Content Include="αβパラメータ.json">
