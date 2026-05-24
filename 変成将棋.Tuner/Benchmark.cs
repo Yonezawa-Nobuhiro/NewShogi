@@ -12,28 +12,23 @@ public static class Benchmark
         var board = new C盤面();
         board.Reset();
 
-        // 1局通しで計測（手詰まりは新局面にリセットして継続）
-        const int 目標手数 = 200;
         int moves = 0;
         var sw = Stopwatch.StartNew();
 
-        while (moves < 目標手数)
+        while (true)
         {
             var 手 = ai.Get手(board);
-            if (手 == null)
-            {
-                board.Reset();
-                continue;
-            }
+            if (手 == null) break;          // 詰み → 終局
             board.Apply(手.Value);
             moves++;
+            if (moves >= 300) break;        // 最大手数ガード
         }
 
         sw.Stop();
-        double msPerMove = sw.Elapsed.TotalMilliseconds / moves;
-        double movesPerSec = 1000.0 / msPerMove;
+        double msPerMove = moves > 0 ? sw.Elapsed.TotalMilliseconds / moves : 0;
+        double movesPerSec = msPerMove > 0 ? 1000.0 / msPerMove : 0;
 
-        Console.WriteLine($"  手数: {moves}  合計: {sw.Elapsed.TotalMilliseconds:F0} ms");
+        Console.WriteLine($"  手数: {moves}  合計: {sw.Elapsed.TotalSeconds:F1} 秒");
         Console.WriteLine($"  1手あたり: {msPerMove:F1} ms  ({movesPerSec:F0} 手/秒)");
         ai.PrintNNUEStat();
     }

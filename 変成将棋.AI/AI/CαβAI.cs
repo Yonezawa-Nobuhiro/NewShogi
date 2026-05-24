@@ -169,7 +169,7 @@ public sealed class CαβAI : IプレイヤーAI
         }
 
         int 最大探索深さ = _p.思考時間ms > 0 ? 99 : _p.探索深さ;
-        int stackSize = 最大探索深さ + 22;  // +20: Quiescence Search の取り合い分
+        int stackSize = 最大探索深さ + 12;  // +10: Quiesce 最大深さ + 余裕2
         _killer = new S手[最大探索深さ + 2, KillerSlots];
 
         if (_nnue_i8 != null || _nnue != null)
@@ -334,9 +334,12 @@ public sealed class CαβAI : IプレイヤーAI
 
     // ── 静止探索（駒取りのみ継続して局面を安定させる） ────────────────────
 
-    private int Quiesce(C盤面 盤面, int α, int β, int 加算器深度, CancellationToken ct)
+    private int Quiesce(C盤面 盤面, int α, int β, int 加算器深度, CancellationToken ct, int quiesce深さ = 0)
     {
         if (ct.IsCancellationRequested) return 0;
+
+        // 10手で打ち切り（配列境界保護 + 無限連鎖防止）
+        if (quiesce深さ >= 10) return C評価関数.Evaluate(盤面, _p, _駒価値);
 
         // 加算器を子ノードのために更新しておく（評価値は駒価値ベースで代替）
         if (_加算器dirty != null && _加算器dirty[加算器深度])
@@ -391,7 +394,7 @@ public sealed class CαβAI : IプレイヤーAI
                 continue;
             }
             SetDirty(加算器深度 + 1, 候補手集[i], 取消);
-            int score = -Quiesce(盤面, -β, -α, 加算器深度 + 1, ct);
+            int score = -Quiesce(盤面, -β, -α, 加算器深度 + 1, ct, quiesce深さ + 1);
             盤面.Undo(候補手集[i], 取消);
 
             if (score >= β) return β;
