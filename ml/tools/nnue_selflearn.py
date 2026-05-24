@@ -25,7 +25,8 @@ from datetime import datetime
 ROOT       = Path(__file__).resolve().parents[2]   # プロジェクトルート
 TUNER_PROJ = ROOT / "変成将棋.Tuner"
 PARAMS     = ROOT / "変成将棋.AI" / "αβパラメータ.json"
-WEIGHTS    = ROOT / "変成将棋.AI" / "nnue_weights_halfkp.bin"
+WEIGHTS      = ROOT / "変成将棋.AI" / "nnue_weights_halfkp.bin"
+WEIGHTS_INT8 = ROOT / "変成将棋.AI" / "nnue_weights_halfkp_i8.bin"
 RUNS_DIR   = ROOT / "ml" / "checkpoints" / "runs"
 TRAIN_SCRIPT = Path(__file__).parent / "train_nnue_halfkp.py"
 
@@ -78,8 +79,9 @@ def main():
         gen_dir = RUNS_DIR / f"gen_{gen:04d}"
         gen_dir.mkdir(exist_ok=True)
 
-        data_tsv  = gen_dir / "eval_data.tsv"
-        weights_out = gen_dir / "nnue_weights_halfkp.bin"
+        data_tsv        = gen_dir / "eval_data.tsv"
+        weights_out     = gen_dir / "nnue_weights_halfkp.bin"
+        weights_int8_out = gen_dir / "nnue_weights_halfkp_i8.bin"
         seed = gen * 137  # 世代ごとに異なるシード
 
         banner = f"世代 {gen} / {start_gen + args.iters - 1}"
@@ -117,7 +119,7 @@ def main():
 
         # ── Step 2: NNUE 学習 ──────────────────────────────────────────────
         cmd_train = [
-            sys.executable,
+            sys.executable, "-u",
             str(TRAIN_SCRIPT),
             "--data",   str(data_tsv),
             "--out",    str(weights_out),
@@ -128,6 +130,7 @@ def main():
         # 前世代の重みがあればファインチューン
         if WEIGHTS.exists():
             cmd_train += ["--resume", str(WEIGHTS)]
+        cmd_train += ["--export-int8", str(weights_int8_out)]
 
         if args.dry_run:
             print(f"  [DRY] {' '.join(str(c) for c in cmd_train)}")
@@ -145,8 +148,13 @@ def main():
             shutil.copy2(weights_out, WEIGHTS)
             size_kb = WEIGHTS.stat().st_size // 1024
             print(f"\n  重みを更新: {WEIGHTS.name}  ({size_kb:,} KB)")
+            if weights_int8_out.exists():
+                shutil.copy2(weights_int8_out, WEIGHTS_INT8)
+                size_kb8 = WEIGHTS_INT8.stat().st_size // 1024
+                print(f"  INT8 重みを更新: {WEIGHTS_INT8.name}  ({size_kb8:,} KB)")
         elif args.dry_run:
             print(f"  [DRY] copy {weights_out} → {WEIGHTS}")
+            print(f"  [DRY] copy {weights_int8_out} → {WEIGHTS_INT8}")
 
         t_total = t_data + t_train
         entry["t_total_sec"] = round(t_total, 1)

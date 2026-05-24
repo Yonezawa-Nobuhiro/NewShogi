@@ -9,7 +9,7 @@ using 変成将棋.Models;
 //   → <output_dir>/<timestamp>_<n>.kf を numGames 局分出力
 
 const int MaxMoves = 500;
-const int RandomOpeningMoves = 8;  // 最初の N 手はランダム（多様性確保）
+const int RandomOpeningMoves = 300;  // 最初の N 手はランダム（多様性確保）
 
 if (args.Length >= 1 && args[0] == "benchmark")
 {
@@ -22,6 +22,63 @@ if (args.Length >= 1 && args[0] == "eval_data")
     // eval_data <params.json> <numGames> <output.tsv> [seed]
     if (args.Length < 4) { Console.Error.WriteLine("Usage: eval_data <params.json> <numGames> <output.tsv> [seed]"); return 1; }
     EvalDataGen.Run(args[1], int.Parse(args[2]), args[3], args.Length > 4 ? int.Parse(args[4]) : 0);
+    return 0;
+}
+
+if (args.Length >= 1 && args[0] == "win_rate")
+{
+    // win_rate <params.json> <numGames> [seed]  — C評価関数同士の自己対局で先手/後手勝率を集計
+    if (args.Length < 3) { Console.Error.WriteLine("Usage: win_rate <params.json> <numGames> [seed]"); return 1; }
+    string wrParams  = args[1];
+    int    wrGames   = int.Parse(args[2]);
+    int    wrSeed    = args.Length > 3 ? int.Parse(args[3]) : 0;
+    int    sente勝ち = 0, gote勝ち = 0, 引き分け = 0;
+    int    completed = 0;
+    var    gameLock  = new object();
+
+    Parallel.For(0, wrGames, g =>
+    {
+        using var ai先手 = new CαβAI(wrParams, "NOBOOK", nnueEnabled: false);
+        using var ai後手 = new CαβAI(wrParams, "NOBOOK", nnueEnabled: false);
+        var board = new C盤面();
+        board.Reset();
+        var rng = new Random(wrSeed + g);
+
+        int result = 0;
+        for (int m = 0; m < 400; m++)
+        {
+            S手? 手;
+            if (m < 8)
+            {
+                S手[] buf = new S手[600];
+                int cnt = C合法手生成器.Get合法手(board, buf);
+                if (cnt == 0) { result = board.手番 == E手番.先手 ? -1 : 1; break; }
+                手 = buf[rng.Next(cnt)];
+            }
+            else
+            {
+                var current = board.手番 == E手番.先手 ? ai先手 : ai後手;
+                手 = current.Get手(board);
+                if (手 == null) { result = board.手番 == E手番.先手 ? -1 : 1; break; }
+            }
+            board.Apply(手.Value);
+        }
+
+        lock (gameLock)
+        {
+            if      (result > 0) sente勝ち++;
+            else if (result < 0) gote勝ち++;
+            else                 引き分け++;
+            completed++;
+            if (completed % Math.Max(1, wrGames / 10) == 0 || completed == wrGames)
+                Console.Error.Write($"\r  [{completed}/{wrGames}] 先手:{sente勝ち} 後手:{gote勝ち} 引分:{引き分け}  ");
+        }
+    });
+
+    Console.Error.WriteLine();
+    double total = sente勝ち + gote勝ち + 引き分け;
+    Console.WriteLine($"先手勝率: {sente勝ち/total*100:F1}%  後手勝率: {gote勝ち/total*100:F1}%  引分: {引き分け/total*100:F1}%");
+    Console.WriteLine(JsonSerializer.Serialize(new { sente勝ち, gote勝ち, 引き分け }));
     return 0;
 }
 

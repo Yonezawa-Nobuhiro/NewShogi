@@ -351,6 +351,60 @@ def load_dataset(tsv_path: str, max_score: int = 3000):
 
 # ── 重みエクスポート ──────────────────────────────────────────────────────────
 
+def export_weights_nhki(model: NNUE_HalfKP, out_path: str):
+    """
+    INT16/INT8量子化 NHKI バイナリ形式で出力 (CNNUE評価器HalfKPInt8 用)。
+
+    量子化方針:
+      Q1 = 127: float acc ∈ [0,1] が int16 acc ∈ [0,127] に対応。
+                SSE4.1 パスが直接 clamp(acc_int16, 0, 127) → uint8 で変換するため、
+                acc_int16 ≈ 127 × h1_float となるよう設計。
+      Q2 = 127 / max(|W2|): W2 を int8 [-127, 127] に収める最大スケール。
+                dequant_scale = 1/(127×Q2) で L2 float 結果を復元。
+    """
+    Q1 = 127.0
+    L1_to_uint8 = 1.0  # SSE4.1 パスは scale 未使用 (直接 clip); scalar fallback 用に 1.0
+
+    w2_np = model.fc2.weight.detach().cpu().numpy()  # [L2, L1*2]
+    max_w2 = float(np.max(np.abs(w2_np)))
+    max_w2 = max(max_w2, 1e-6)
+    Q2 = 127.0 / max_w2
+
+    with open(out_path, 'wb') as f:
+        f.write(b'NHKI')
+        f.write(struct.pack('f', Q1))
+        f.write(struct.pack('f', L1_to_uint8))
+
+        # W1_q, B1_q per bucket: int16, feature-major [FS × L1]
+        for b in range(BUCKET_COUNT):
+            w1 = model.embed[b].weight.detach().cpu().numpy()[:FEATURE_SIZE]  # [FS, L1]
+            w1_q = np.clip(np.round(w1 * Q1), -32767, 32767).astype(np.int16)
+            f.write(w1_q.flatten().tobytes())
+
+            b1 = model.b1[b].detach().cpu().numpy()  # [L1]
+            b1_q = np.clip(np.round(b1 * Q1), -32767, 32767).astype(np.int16)
+            f.write(b1_q.tobytes())
+
+        # Q2
+        f.write(struct.pack('f', Q2))
+
+        # W2_q [L2 × L1*2]: output-major (C# LoadAlignedVector256 の行アライン要件に合致)
+        w2_q = np.clip(np.round(w2_np * Q2), -127, 127).astype(np.int8)
+        f.write(w2_q.flatten().tobytes())  # shape [L2, L1*2] → output-major ✓
+
+        # B2 [L2]: float32 (スケール不要、L2 accumがdequant後にfloatへ戻るため)
+        f.write(model.fc2.bias.detach().cpu().numpy().astype(np.float32).tobytes())
+
+        # W3 [L2]: float32
+        f.write(model.out.weight.detach().cpu().numpy().flatten().astype(np.float32).tobytes())
+
+        # B3: float32
+        f.write(struct.pack('f', float(model.out.bias.detach().item())))
+
+    size_kb = Path(out_path).stat().st_size // 1024
+    print(f"  INT8保存: {out_path}  ({size_kb:,} KB)  Q1={Q1:.0f}  Q2={Q2:.1f}")
+
+
 def export_weights(model: NNUE_HalfKP, out_path: str):
     """C# CNNUE評価器 が読み込めるバイナリ形式 (NHKP) で出力する。"""
     with open(out_path, 'wb') as f:
@@ -419,7 +473,8 @@ def load_weights(model: NNUE_HalfKP, bin_path: str) -> bool:
 
 
 def train(data_path: str, out_path: str, epochs: int = 20, batch: int = 4096,
-          lr: float = 1e-3, resume: str | None = None):
+          lr: float = 1e-3, resume: str | None = None,
+          export_int8: str | None = None):
     device = torch.device('cpu')  # GTX 1060 (sm_61) CUDA 非対応
     print(f"device={device}")
 
@@ -440,8 +495,8 @@ def train(data_path: str, out_path: str, epochs: int = 20, batch: int = 4096,
     sched    = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
     loss_fn  = nn.MSELoss()
 
-    print(f"\n{'epoch':>5}  {'train':>9}  {'val':>9}")
-    print('-' * 28)
+    print(f"\n{'epoch':>5}  {'train':>9}  {'val':>9}", flush=True)
+    print('-' * 28, flush=True)
 
     best_val = float('inf')
     for ep in range(1, epochs + 1):
@@ -469,11 +524,13 @@ def train(data_path: str, out_path: str, epochs: int = 20, batch: int = 4096,
             va_loss = loss_fn(model(bs, is_, bg, ig, sm), yv).item()
 
         sched.step()
-        print(f"{ep:>5}  {tr_loss:>9.5f}  {va_loss:>9.5f}")
+        print(f"{ep:>5}  {tr_loss:>9.5f}  {va_loss:>9.5f}", flush=True)
 
         if va_loss < best_val:
             best_val = va_loss
             export_weights(model, out_path)
+            if export_int8:
+                export_weights_nhki(model, export_int8)
 
     print(f"\n最良 val_loss: {best_val:.5f}")
     print(f"出力: {out_path}")
@@ -488,7 +545,10 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int,   default=20)
     parser.add_argument('--batch',  type=int,   default=4096)
     parser.add_argument('--lr',     type=float, default=1e-3)
-    parser.add_argument('--resume', default=None, help='前世代の重みファイル (ファインチューン用)')
+    parser.add_argument('--resume',     default=None, help='前世代の重みファイル (ファインチューン用)')
+    parser.add_argument('--export-int8', default=None, dest='export_int8',
+                        help='INT8量子化 NHKI ファイルの出力先 (CNNUE評価器HalfKPInt8 用)')
     args = parser.parse_args()
 
-    train(args.data, args.out, args.epochs, args.batch, args.lr, args.resume)
+    train(args.data, args.out, args.epochs, args.batch, args.lr,
+          args.resume, args.export_int8)

@@ -127,6 +127,31 @@ public class C盤面
         return false;
     }
 
+    // 局面を src からコピー（SFEN経由より高速）
+    public void CopyFrom(C盤面 src)
+    {
+        for (int 列 = 1; 列 <= 9; 列++)
+        {
+            for (int 段 = 1; 段 <= 9; 段++)
+            {
+                升目[列, 段].駒 = src.升目[列, 段].駒;
+            }
+        }
+        先手持ち駒.Clear();
+        foreach (var kv in src.先手持ち駒) 先手持ち駒[kv.Key] = kv.Value;
+        後手持ち駒.Clear();
+        foreach (var kv in src.後手持ち駒) 後手持ち駒[kv.Key] = kv.Value;
+        手番 = src.手番;
+        手数 = src.手数;
+        _全駒ビット = src._全駒ビット;
+        Array.Copy(src._先手駒ビット, _先手駒ビット, 17);
+        Array.Copy(src._後手駒ビット, _後手駒ビット, 17);
+    }
+
+    // Null Move（盤面変更なしで手番だけ入れ替える）
+    public void ApplyNullMove()  => 手番 = 手番 == E手番.先手 ? E手番.後手 : E手番.先手;
+    public void UndoNullMove()   => 手番 = 手番 == E手番.先手 ? E手番.後手 : E手番.先手;
+
     // 手を適用して取消情報を返す。手番も切り替わる。
     public S取消情報 Apply(S手 手)
     {

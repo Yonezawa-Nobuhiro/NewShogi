@@ -25,7 +25,7 @@ public static class EvalDataGen
             var rng = new Random(seed + g);
             var lines = new List<string>(400);
 
-            for (int m = 0; m < 400; m++)
+            for (int m = 0; m < 300; m++)
             {
                 S手? 手;
                 if (m < 8)

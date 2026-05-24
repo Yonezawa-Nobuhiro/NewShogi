@@ -7,6 +7,10 @@ using 変成将棋.Models;
 
 namespace 変成将棋.NNUE;
 
+// ── 旧実装 (旧特徴量 2,606次元) ──────────────────────────────────────────────
+// 新実装は CNNUE評価器HalfKPInt8.cs (HalfKP 194,643次元) を使用。
+// 速度比較用に残存。
+
 /// <summary>
 /// INT8 量子化 NNUE 評価器。
 /// Avx2 の MultiplyAddAdjacent (pmaddubsw) を使い L2 を高速化。

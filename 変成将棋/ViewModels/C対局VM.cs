@@ -27,8 +27,9 @@ public class C対局VM : INotifyPropertyChanged
     private List<S手>? _1歩手;
     private Dictionary<byte, List<S手>>? _保存済み移動先;
 
-    private static readonly IプレイヤーAI _ランダムAI = new CランダムAI();
-    private static readonly IプレイヤーAI _αβAI     = new CαβAI();
+    private static readonly IプレイヤーAI _ランダムAI  = new CランダムAI();
+    private static readonly IプレイヤーAI _αβAI      = new CαβAI();
+    private static readonly IプレイヤーAI _評価関数AI = new CαβAI(nnueEnabled: false);
 
     private bool _ゲームオーバー;
     private bool _千日手;
@@ -48,6 +49,8 @@ public class C対局VM : INotifyPropertyChanged
     private bool _後手AI;
     private bool _先手αβ;
     private bool _後手αβ;
+    private bool _先手評価;
+    private bool _後手評価;
     private IプレイヤーAI? _AIプレイヤー;
 
     // 棋譜
@@ -107,19 +110,24 @@ public class C対局VM : INotifyPropertyChanged
             : "";
 
     // 対局者モード（メニューの IsChecked バインディング用）
-    private bool αβなし => !_先手αβ && !_後手αβ;
-    public bool Mode先後人間    => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし;
-    public bool Mode先人間後CPU => !_先手CPU &&  _後手CPU && !_先手AI && !_後手AI && αβなし;
-    public bool Mode先CPU後人間 =>  _先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし;
-    public bool Mode先後CPU     =>  _先手CPU &&  _後手CPU && !_先手AI && !_後手AI && αβなし;
-    public bool Mode先人間後AI  => !_先手CPU && !_後手CPU && !_先手AI &&  _後手AI && αβなし;
-    public bool Mode先AI後人間  => !_先手CPU && !_後手CPU &&  _先手AI && !_後手AI && αβなし;
-    public bool Mode先AI後CPU   =>  _先手AI  &&  _後手CPU && !_先手CPU && !_後手AI && αβなし;
-    public bool Mode先CPU後AI   =>  _先手CPU &&  _後手AI  && !_先手AI  && !_後手CPU && αβなし;
+    private bool αβなし  => !_先手αβ  && !_後手αβ;
+    private bool 評価なし => !_先手評価 && !_後手評価;
+    public bool Mode先後人間    => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし && 評価なし;
+    public bool Mode先人間後CPU => !_先手CPU &&  _後手CPU && !_先手AI && !_後手AI && αβなし && 評価なし;
+    public bool Mode先CPU後人間 =>  _先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし && 評価なし;
+    public bool Mode先後CPU     =>  _先手CPU &&  _後手CPU && !_先手AI && !_後手AI && αβなし && 評価なし;
+    public bool Mode先人間後AI  => !_先手CPU && !_後手CPU && !_先手AI &&  _後手AI && αβなし && 評価なし;
+    public bool Mode先AI後人間  => !_先手CPU && !_後手CPU &&  _先手AI && !_後手AI && αβなし && 評価なし;
+    public bool Mode先AI後CPU   =>  _先手AI  &&  _後手CPU && !_先手CPU && !_後手AI && αβなし && 評価なし;
+    public bool Mode先CPU後AI   =>  _先手CPU &&  _後手AI  && !_先手AI  && !_後手CPU && αβなし && 評価なし;
     public bool Mode先人間後αβ  => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && !_先手αβ &&  _後手αβ;
     public bool Mode先αβ後人間  => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI &&  _先手αβ && !_後手αβ;
     public bool Mode先αβ後CPU   =>  _先手αβ  &&  _後手CPU;
     public bool Mode先CPU後αβ   =>  _先手CPU &&  _後手αβ;
+    public bool Mode先人間後評価 => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし && !_先手評価 &&  _後手評価;
+    public bool Mode先評価後人間 => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし &&  _先手評価 && !_後手評価;
+    public bool Mode先評価後CPU  =>  _先手評価 &&  _後手CPU;
+    public bool Mode先CPU後評価  =>  _先手CPU  &&  _後手評価;
     public bool AIモデル読み込み済み => _AIプレイヤー is not null;
 
     // 思考時間表示
@@ -155,10 +163,14 @@ public class C対局VM : INotifyPropertyChanged
     public ICommand 先AI後人間コマンド  { get; }
     public ICommand 先AI後CPUコマンド   { get; }
     public ICommand 先CPU後AIコマンド   { get; }
-    public ICommand 先人間後αβコマンド { get; }
-    public ICommand 先αβ後人間コマンド { get; }
-    public ICommand 先αβ後CPUコマンド  { get; }
-    public ICommand 先CPU後αβコマンド  { get; }
+    public ICommand 先人間後αβコマンド  { get; }
+    public ICommand 先αβ後人間コマンド  { get; }
+    public ICommand 先αβ後CPUコマンド   { get; }
+    public ICommand 先CPU後αβコマンド   { get; }
+    public ICommand 先人間後評価コマンド { get; }
+    public ICommand 先評価後人間コマンド { get; }
+    public ICommand 先評価後CPUコマンド  { get; }
+    public ICommand 先CPU後評価コマンド  { get; }
 
     // 棋譜ナビゲーションコマンド
     public ICommand 最初の手コマンド    { get; }
@@ -200,6 +212,10 @@ public class C対局VM : INotifyPropertyChanged
         先αβ後人間コマンド  = new CRelayCommand(() => Setαβ対局者(先手αβ: true,  後手αβ: false));
         先αβ後CPUコマンド   = new CRelayCommand(() => Setαβ対CPU対局者(先手αβ: true));
         先CPU後αβコマンド   = new CRelayCommand(() => Setαβ対CPU対局者(先手αβ: false));
+        先人間後評価コマンド = new CRelayCommand(() => Set評価関数対局者(先手評価: false, 後手評価: true));
+        先評価後人間コマンド = new CRelayCommand(() => Set評価関数対局者(先手評価: true,  後手評価: false));
+        先評価後CPUコマンド  = new CRelayCommand(() => Set評価関数対CPU対局者(先手評価: true));
+        先CPU後評価コマンド  = new CRelayCommand(() => Set評価関数対CPU対局者(先手評価: false));
         最初の手コマンド     = new CRelayCommand(() => 棋譜位置へ移動(0));
         前の手コマンド       = new CRelayCommand(() => 棋譜位置へ移動(_再生位置 - 1));
         次の手コマンド       = new CRelayCommand(() => 棋譜位置へ移動(_再生位置 + 1));
@@ -262,6 +278,27 @@ public class C対局VM : INotifyPropertyChanged
         _先手CPU = 先手CPU; _後手CPU = 後手CPU;
         _先手AI  = false;   _後手AI  = false;
         _先手αβ  = false;   _後手αβ  = false;
+        _先手評価 = false;  _後手評価 = false;
+        NotifyモードChanged();
+        Try自動();
+    }
+
+    private void Set評価関数対局者(bool 先手評価, bool 後手評価)
+    {
+        _先手評価 = 先手評価; _後手評価 = 後手評価;
+        _先手AI  = false; _後手AI  = false;
+        _先手CPU = false; _後手CPU = false;
+        _先手αβ  = false; _後手αβ  = false;
+        NotifyモードChanged();
+        Try自動();
+    }
+
+    private void Set評価関数対CPU対局者(bool 先手評価)
+    {
+        _先手評価 =  先手評価; _後手評価 = !先手評価;
+        _先手CPU  = !先手評価; _後手CPU  =  先手評価;
+        _先手AI   = false;    _後手AI   = false;
+        _先手αβ   = false;    _後手αβ   = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -272,6 +309,7 @@ public class C対局VM : INotifyPropertyChanged
         _先手AI = 先手AI; _後手AI = 後手AI;
         _先手CPU = false; _後手CPU = false;
         _先手αβ  = false; _後手αβ  = false;
+        _先手評価 = false; _後手評価 = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -282,6 +320,7 @@ public class C対局VM : INotifyPropertyChanged
         _先手AI  =  先手AI; _後手AI  = !先手AI;
         _先手CPU = !先手AI; _後手CPU =  先手AI;
         _先手αβ  = false;   _後手αβ  = false;
+        _先手評価 = false;  _後手評価 = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -291,6 +330,7 @@ public class C対局VM : INotifyPropertyChanged
         _先手αβ = 先手αβ; _後手αβ = 後手αβ;
         _先手AI  = false; _後手AI  = false;
         _先手CPU = false; _後手CPU = false;
+        _先手評価 = false; _後手評価 = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -300,6 +340,7 @@ public class C対局VM : INotifyPropertyChanged
         _先手αβ  =  先手αβ; _後手αβ  = !先手αβ;
         _先手CPU = !先手αβ; _後手CPU =  先手αβ;
         _先手AI  = false;   _後手AI  = false;
+        _先手評価 = false;  _後手評価 = false;
         NotifyモードChanged();
         Try自動();
     }
@@ -326,13 +367,17 @@ public class C対局VM : INotifyPropertyChanged
         OnPropertyChanged(nameof(Mode先αβ後人間));
         OnPropertyChanged(nameof(Mode先αβ後CPU));
         OnPropertyChanged(nameof(Mode先CPU後αβ));
+        OnPropertyChanged(nameof(Mode先人間後評価));
+        OnPropertyChanged(nameof(Mode先評価後人間));
+        OnPropertyChanged(nameof(Mode先評価後CPU));
+        OnPropertyChanged(nameof(Mode先CPU後評価));
     }
 
     // ===== 自動実行（CPU / AI） =====
 
     private bool Is自動番()
-        => (_盤面.手番 == E手番.先手 && (_先手CPU || _先手AI || _先手αβ)) ||
-           (_盤面.手番 == E手番.後手 && (_後手CPU || _後手AI || _後手αβ));
+        => (_盤面.手番 == E手番.先手 && (_先手CPU || _先手AI || _先手αβ || _先手評価)) ||
+           (_盤面.手番 == E手番.後手 && (_後手CPU || _後手AI || _後手αβ || _後手評価));
 
     private void Stop自動対局()
     {
@@ -363,7 +408,7 @@ public class C対局VM : INotifyPropertyChanged
             return;
         }
 
-        if (_先手αβ || _後手αβ)
+        if (_先手αβ || _後手αβ || _先手評価 || _後手評価)
         {
             Stop自動対局();
             if (!_ゲームオーバー) _ = αβ対局Async();
@@ -426,11 +471,12 @@ public class C対局VM : INotifyPropertyChanged
                 bool useαβ = _盤面.手番 == E手番.先手 ? _先手αβ : _後手αβ;
                 bool useAI = _盤面.手番 == E手番.先手 ? _先手AI : _後手AI;
                 S手? 手;
-                if (useαβ)
+                bool use評価 = _盤面.手番 == E手番.先手 ? _先手評価 : _後手評価;
+                if (useαβ || use評価)
                 {
-                    // SFEN スナップショットをとって別盤面で探索（UIスレッドとの競合を防ぐ）
+                    var ai   = use評価 ? _評価関数AI : _αβAI;
                     var sfen = _盤面.ToSFEN();
-                    手 = await Task.Run(() => _αβAI.Get手(new C盤面(sfen)), cts.Token);
+                    手 = await Task.Run(() => ai.Get手(new C盤面(sfen)), cts.Token);
                 }
                 else if (useAI && _AIプレイヤー is not null)
                 {

@@ -118,6 +118,24 @@
                           Command="{Binding 先CPU後αβコマンド}"
                           IsCheckable="True"
                           IsChecked="{Binding Mode先CPU後αβ, Mode=OneWay}"/>
+                <Separator Background="#555"/>
+                <MenuItem Header="先手人間 ／ 後手評価関数"
+                          Command="{Binding 先人間後評価コマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先人間後評価, Mode=OneWay}"/>
+                <MenuItem Header="先手評価関数 ／ 後手人間"
+                          Command="{Binding 先評価後人間コマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先評価後人間, Mode=OneWay}"/>
+                <Separator Background="#555"/>
+                <MenuItem Header="先手評価関数 ／ 後手CPU"
+                          Command="{Binding 先評価後CPUコマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先評価後CPU, Mode=OneWay}"/>
+                <MenuItem Header="先手CPU ／ 後手評価関数"
+                          Command="{Binding 先CPU後評価コマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先CPU後評価, Mode=OneWay}"/>
             </MenuItem>
             <Separator Background="#555"/>
             <MenuItem Header="AIモデルを読み込む..." Click="OnAIモデル読み込みClick"/>

@@ -36,10 +36,27 @@
       "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"print\\('hello'\\)\")",
       "PowerShell(Set-Location \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $t = [Diagnostics.Stopwatch]::StartNew\\(\\); dotnet run --project 変成将棋.Tuner -c Release -- eval_data 変成将棋.AI/αβパラメータ.json 1 ml/checkpoints/timing_test.tsv 0 2>&1; $t.Stop\\(\\); Write-Host \"合計: $\\($t.Elapsed.TotalSeconds.ToString\\('F1'\\)\\)秒\")",
       "PowerShell(Set-Location \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $t = [Diagnostics.Stopwatch]::StartNew\\(\\); dotnet run --project 変成将棋.Tuner -c Release -- eval_data 変成将棋.AI/αβパラメータ.json 3 ml/checkpoints/timing_test3.tsv 0 2>&1; $t.Stop\\(\\); $lines = \\(Get-Content ml/checkpoints/timing_test3.tsv | Measure-Object -Line\\).Lines; Write-Host \"合計: $\\($t.Elapsed.TotalSeconds.ToString\\('F1'\\)\\)秒  サンプル: $lines\")",
-      "PowerShell(Get-Item \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋.AI\\\\nnue_weights_halfkp.bin\" | Select-Object Name, @{N='Size_MB';E={[Math]::Round\\($_.Length/1MB,1\\)}})"
+      "PowerShell(Get-Item \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\\\\変成将棋.AI\\\\nnue_weights_halfkp.bin\" | Select-Object Name, @{N='Size_MB';E={[Math]::Round\\($_.Length/1MB,1\\)}})",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('c:/Users/nobuh/source/変則将棋.vscode/ml/tools/train_nnue_halfkp.py'\\).read\\(\\)\\); print\\('train_nnue_halfkp.py OK'\\)\")",
+      "PowerShell(python -c \"import ast; ast.parse\\(open\\('c:/Users/nobuh/source/�ϑ�����.vscode/ml/tools/train_nnue_halfkp.py'\\).read\\(\\)\\); print\\('train_nnue_halfkp.py OK'\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import ast; ast.parse\\(open\\('c:/Users/nobuh/source/�ϑ�����.vscode/ml/tools/train_nnue_halfkp.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import ast; ast.parse\\(open\\('c:/Users/nobuh/source/�ϑ�����.vscode/ml/tools/train_nnue_halfkp.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import ast; ast.parse\\(open\\('c:/Users/nobuh/source/�ϑ�����.vscode/ml/tools/nnue_selflearn.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import numpy; print\\('numpy OK'\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\nobuh\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import torch; print\\('torch', torch.__version__\\)\")",
+      "Bash(awk '{print $5, $9}')",
+      "PowerShell(Start-Process \"c:\\\\Users\\\\nobuh\\\\source\\\\�ϑ�����.vscode\\\\�ϐ�����\\\\bin\\\\Release\\\\net10.0-windows\\\\�ϐ�����.exe\")",
+      "Read(//c/Users/nobuh/source/変則将棋.vscode/**)",
+      "Bash(python -c ' *)",
+      "Bash(dotnet run *)",
+      "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $env:STAT=\"1\"; dotnet run --project 変成将棋.Tuner -c Release -- benchmark 変成将棋.AI/αβパラメータ.json 2>&1)",
+      "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; dotnet build 変成将棋.Tuner -c Release 2>&1 | Select-String \"エラー|error\" | Select-Object -Last 3; $env:STAT=\"1\"; dotnet run --project 変成将棋.Tuner -c Release -- benchmark 変成将棋.AI/αβパラメータ.json 2>&1 | Select-Object -Last 5)",
+      "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; dotnet build 変成将棋.Tuner -c Release 2>&1 | Select-String \"エラー\" | Select-Object -Last 1; $env:STAT=\"1\"; dotnet run --project 変成将棋.Tuner -c Release -- benchmark 変成将棋.AI/αβパラメータ.json 2>&1 | Select-Object -Last 6)",
+      "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $sw = [System.Diagnostics.Stopwatch]::StartNew\\(\\); dotnet run --project 変成将棋.Tuner -c Release -- eval_data 変成将棋.AI/αβパラメータ.json 12 ml/checkpoints/test_d4_12g.tsv 2>&1; $sw.Stop\\(\\); Write-Host \"合計: $\\($sw.Elapsed.TotalSeconds.ToString\\('F1'\\)\\)秒\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\nobuh\\source\\�ϑ�����.vscode\\ml"
     ]
-  }
+  },
+  "language": "ja"
 }
