@@ -8,8 +8,8 @@ using 変成将棋.Models;
 // モード 2 (生成):  generate <params.json> <numGames> <output_dir> [seed]
 //   → <output_dir>/<timestamp>_<n>.kf を numGames 局分出力
 
-const int MaxMoves = 500;
-const int RandomOpeningMoves = 300;  // 最初の N 手はランダム（多様性確保）
+const int MaxMoves = 250;
+const int RandomOpeningMoves = 8;   // 最初の N 手はランダム（多様性確保）
 
 if (args.Length >= 1 && args[0] == "benchmark")
 {
