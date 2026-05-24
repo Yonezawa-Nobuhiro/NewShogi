@@ -96,7 +96,7 @@ public static class C将棋FE表記
                 if (記号駒種表.TryGetValue(記号, out E駒種 種類))
                 {
                     var 持ち駒 = 手番 == E手番.先手 ? 盤面.先手持ち駒 : 盤面.後手持ち駒;
-                    持ち駒[種類] = 持ち駒.GetValueOrDefault(種類) + 枚数;
+                    持ち駒[(int)種類] += 枚数;
                 }
                 i++;
             }
@@ -115,7 +115,7 @@ public static class C将棋FE表記
             for (int 列 = 9; 列 >= 1; 列--)
             {
                 var 駒 = 盤面.Get升(列, 段).駒;
-                if (駒 == null)
+                if (!駒.Is有効)
                 {
                     空白数++;
                 }
@@ -144,12 +144,13 @@ public static class C将棋FE表記
         return sb.ToString();
     }
 
-    private static void Append持ち駒(StringBuilder sb, Dictionary<E駒種, int> 持ち駒, bool 先手)
+    private static void Append持ち駒(StringBuilder sb, int[] 持ち駒, bool 先手)
     {
         E駒種[] 順序 = [E駒種.飛車, E駒種.角行, E駒種.金将, E駒種.銀将, E駒種.桂馬, E駒種.香車, E駒種.歩兵];
         foreach (var 種類 in 順序)
         {
-            if (!持ち駒.TryGetValue(種類, out int 枚数) || 枚数 <= 0) continue;
+            int 枚数 = 持ち駒[(int)種類];
+            if (枚数 <= 0) continue;
             if (枚数 > 1) sb.Append(枚数);
             sb.Append(先手 ? 駒種記号表[種類].ToUpper() : 駒種記号表[種類].ToLower());
         }

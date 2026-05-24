@@ -65,7 +65,7 @@ internal sealed class C特徴変換層
         for (int 列 = 1; 列 <= 9; 列++)
         {
             var 駒 = 盤面.Get駒(列, 段);
-            if (駒 == null) continue;
+            if (!駒.Is有効) continue;
             if (駒.種類 == E駒種.玉将 || 駒.種類 == E駒種.獅王) continue;
 
             int 駒種番号 = To駒種番号(駒.種類);
@@ -104,10 +104,10 @@ internal sealed class C特徴変換層
         var 指した側 = 盤面.手番 == E手番.先手 ? E手番.後手 : E手番.先手;
         // 移動前駒種: 移動先にいる駒が移動後。成りなら成る前の種類に戻す。
         E駒種? 移動前駒種 = 手.Is打ち ? null
-            : 手.Is成り ? C駒.Get成り前(盤面.Get駒(手.Get移動先)!.種類)
-            : 盤面.Get駒(手.Get移動先)!.種類;
-        C駒? 取駒        = 取消.取り駒;
-        C駒? 獅子中取駒   = 取消.中間取り駒;
+            : 手.Is成り ? C駒.Get成り前(盤面.Get駒(手.Get移動先).種類)
+            : 盤面.Get駒(手.Get移動先).種類;
+        C駒 取駒        = 取消.取り駒;
+        C駒 獅子中取駒   = 取消.中間取り駒;
         var 荷重   = _特徴層荷重[局面区分];
         int 自玉升 = To升番号(盤面.Find玉(視点));
         var 指した側持ち駒 = 指した側 == E手番.先手 ? 盤面.先手持ち駒 : 盤面.後手持ち駒;
@@ -121,7 +121,7 @@ internal sealed class C特徴変換層
                 int 移動先升 = To升番号(手.Get移動先);
                 int 敵区分値 = 指した側 == 視点 ? 0 : 1;
                 Add荷重行(加算器, 荷重, Calc駒位置開始番号(自玉升, 敵区分値, 駒種番号, 移動先升), 1f);
-                指した側持ち駒.TryGetValue(駒種, out int 現在枚数);
+                int 現在枚数 = 指した側持ち駒[(int)駒種];
                 Add持駒差分(加算器, 荷重, 自玉升, 駒種, 視点, 指した側, -1, 現在枚数);
             }
         }
@@ -151,19 +151,19 @@ internal sealed class C特徴変換層
                 Add荷重行(加算器, 荷重, Calc駒位置開始番号(自玉升, 敵区分値, 移動後駒種番号, 移動先升), 1f);
 
             // 取り駒の除去 + 持駒増加
-            if (取駒 != null)
+            if (取駒.Is有効)
             {
                 int 取駒敵区分値 = 取駒.手番 == 視点 ? 0 : 1;
                 int 取駒種番号  = To駒種番号(取駒.種類);
                 if (取駒種番号 >= 0)
                     Add荷重行(加算器, 荷重, Calc駒位置開始番号(自玉升, 取駒敵区分値, 取駒種番号, 移動先升), -1f);
                 var 取駒基本種 = C駒.Get成り前(取駒.種類);
-                指した側持ち駒.TryGetValue(取駒基本種, out int 取駒現在枚数);
+                int 取駒現在枚数 = 指した側持ち駒[(int)取駒基本種];
                 Add持駒差分(加算器, 荷重, 自玉升, 取駒基本種, 視点, 指した側, +1, 取駒現在枚数);
             }
 
             // 獅王中間取り
-            if (獅子中取駒 != null)
+            if (獅子中取駒.Is有効)
             {
                 int 中間升番号    = To升番号(手.Get中間);
                 int 中間駒敵区分値 = 獅子中取駒.手番 == 視点 ? 0 : 1;
@@ -171,7 +171,7 @@ internal sealed class C特徴変換層
                 if (中間駒種番号 >= 0)
                     Add荷重行(加算器, 荷重, Calc駒位置開始番号(自玉升, 中間駒敵区分値, 中間駒種番号, 中間升番号), -1f);
                 var 中間駒基本種 = C駒.Get成り前(獅子中取駒.種類);
-                指した側持ち駒.TryGetValue(中間駒基本種, out int 中間駒現在枚数);
+                int 中間駒現在枚数 = 指した側持ち駒[(int)中間駒基本種];
                 Add持駒差分(加算器, 荷重, 自玉升, 中間駒基本種, 視点, 指した側, +1, 中間駒現在枚数);
             }
         }
@@ -237,22 +237,22 @@ internal sealed class C特徴変換層
            * CNNUE評価器.L1数;
 
     private static void Add持駒特徴量(Span<float> L1, float[] 荷重,
-        Dictionary<E駒種, int> 持ち駒, int 自玉升, int 敵区分値)
+        int[] 持ち駒, int 自玉升, int 敵区分値)
     {
         // 歩: 0枚を含む7区分 one-hot（常にいずれか1つがアクティブ）
-        持ち駒.TryGetValue(E駒種.歩兵, out int 歩枚数);
+        int 歩枚数 = 持ち駒[(int)E駒種.歩兵];
         Add荷重行(L1, 荷重, Calc持駒歩開始番号(自玉升, 敵区分値, 歩枚数区分(歩枚数)), 1f);
 
         for (int si = 0; si < 小駒一覧.Length; si++)
         {
-            持ち駒.TryGetValue(小駒一覧[si], out int cnt);
+            int cnt = 持ち駒[(int)小駒一覧[si]];
             if (cnt <= 0) continue;
             Add荷重行(L1, 荷重, Calc持駒小駒開始番号(自玉升, 敵区分値, si, cnt), 1f);
         }
 
         for (int li = 0; li < 大駒一覧.Length; li++)
         {
-            持ち駒.TryGetValue(大駒一覧[li], out int cnt);
+            int cnt = 持ち駒[(int)大駒一覧[li]];
             if (cnt <= 0) continue;
             Add荷重行(L1, 荷重, Calc持駒大駒開始番号(自玉升, 敵区分値, li, cnt), 1f);
         }

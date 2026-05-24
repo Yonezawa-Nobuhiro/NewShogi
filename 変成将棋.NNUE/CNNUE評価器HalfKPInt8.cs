@@ -96,6 +96,10 @@ public sealed unsafe class CNNUE評価器HalfKPInt8 : IDisposable
     public static int 局面区分番号取得(E駒種 自玉, E駒種 敵玉)
         => CNNUE評価器.局面区分番号取得(自玉, 敵玉);
 
+    // ── 統計（デバッグ用） ────────────────────────────────────────────────────
+    public long _stat_scratch;
+    public long _stat_diff;
+
     // ── 加算器 API（CαβAI 向け）──────────────────────────────────────────────
 
     /// <summary>指定視点の L1 加算器を初期化（スクラッチ）。</summary>
@@ -108,9 +112,15 @@ public sealed unsafe class CNNUE評価器HalfKPInt8 : IDisposable
         short[] acc, S手 手, S取消情報 取消)
     {
         if (旧局面区分 != 新局面区分 || 全再計算が必要(盤面, 手, 視点))
+        {
+            System.Threading.Interlocked.Increment(ref _stat_scratch);
             _特徴変換層.加算器計算(盤面, 視点, 新局面区分, acc);
+        }
         else
+        {
+            System.Threading.Interlocked.Increment(ref _stat_diff);
             _特徴変換層.適用後加算器更新(盤面, 視点, 新局面区分, acc, 手, 取消);
+        }
     }
 
     /// <summary>2視点の加算器から評価値（手番側視点 centipawn）を計算。</summary>

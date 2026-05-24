@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.Intrinsics.X86;
 
 namespace 変成将棋.Models;
 
@@ -13,6 +14,30 @@ public readonly struct S利きビット
 
     public static readonly S利きビット 空     = new(0UL, 0UL);
     public static readonly S利きビット 全盤面 = new(ulong.MaxValue, 0x1FFFFUL); // 全81升
+
+    // GetColKey の PEXT 用列マスク（列1〜9）
+    // _下 と _上 それぞれに対して列の占有ビットを抽出するマスク
+    private static readonly ulong[] _colMask下  = new ulong[10];
+    private static readonly ulong[] _colMask上  = new ulong[10];
+    private static readonly int[]   _col下bits  = new int[10]; // _下から抽出されるビット数（段1-8 or 段1-7）
+
+    static S利きビット()
+    {
+        for (int c = 1; c <= 9; c++)
+        {
+            ulong m下 = 0, m上 = 0;
+            int cnt下 = 0;
+            for (int r = 1; r <= 9; r++)
+            {
+                int idx = (r - 1) * 9 + (c - 1);
+                if (idx < 64) { m下 |= 1UL << idx; cnt下++; }
+                else           m上 |= 1UL << (idx - 64);
+            }
+            _colMask下[c] = m下;
+            _colMask上[c] = m上;
+            _col下bits[c] = cnt下;
+        }
+    }
 
     private S利きビット(ulong 下, ulong 上)
     {
@@ -44,13 +69,47 @@ public readonly struct S利きビット
         return new(_下, _上 & ~(1UL << (idx - 64)));
     }
 
-    public S利きビット Or(S利きビット other)  => new(_下 | other._下, _上 | other._上);
-    public S利きビット And(S利きビット other) => new(_下 & other._下, _上 & other._上);
-    public S利きビット Xor(S利きビット other) => new(_下 ^ other._下, _上 ^ other._上);
+    public S利きビット Or(S利きビット other)       => new(_下 | other._下, _上 | other._上);
+    public S利きビット And(S利きビット other)      => new(_下 & other._下, _上 & other._上);
+    public S利きビット Xor(S利きビット other)      => new(_下 ^ other._下, _上 ^ other._上);
+    public S利きビット AndNot(S利きビット other)   => new(_下 & ~other._下, _上 & ~other._上);
     public bool IsEmpty => (_下 | _上) == 0;
+
+    // 線形インデックスで直接ビットをクリア（ビットイテレーション用）
+    public S利きビット ClearBit(int idx)
+        => idx < 64 ? new(_下 & ~(1UL << idx), _上)
+                    : new(_下, _上 & ~(1UL << (idx - 64)));
 
     // 静的ファクトリ：単一升からビットボードを作る
     public static S利きビット From(S升座標 升) => 空.Set(升);
+
+    // 指定段の9bit占有キー（攻撃テーブルのルックアップキー）
+    // 段 r のインデックスは (r-1)*9 〜 (r-1)*9+8 の連続9ビット
+    // 段1〜7: 全て_下に収まる / 段8: bit63(_下)+bit0-7(_上) / 段9: _上のbit8-16
+    public int GetRowKey(int 段)
+    {
+        int start = (段 - 1) * 9;
+        if (start + 8 < 64)                          // 段1〜7: 全て_下
+            return (int)(_下 >> start) & 0x1FF;
+        if (start == 63)                              // 段8: _下bit63 + _上bit0-7
+            return (int)((_下 >> 63) | (_上 << 1)) & 0x1FF;
+        return (int)(_上 >> (start - 64)) & 0x1FF;   // 段9: _上bit8-16
+    }
+
+    // 指定列の9bit占有キー（PEXT命令で高速抽出、非対応CPU はループフォールバック）
+    public int GetColKey(int 列)
+    {
+        if (Bmi2.X64.IsSupported)
+        {
+            int 下result = (int)Bmi2.X64.ParallelBitExtract(_下, _colMask下[列]);
+            int 上result = (int)Bmi2.X64.ParallelBitExtract(_上, _colMask上[列]);
+            return 下result | (上result << _col下bits[列]);
+        }
+        int key = 0;
+        for (int 段 = 1; 段 <= 9; 段++)
+            if (GetBit((段 - 1) * 9 + 列 - 1)) key |= 1 << (段 - 1);
+        return key;
+    }
 
     // 線形インデックスで直接ビットを取得（攻撃テーブル構築用）
     public bool GetBit(int linearIdx)

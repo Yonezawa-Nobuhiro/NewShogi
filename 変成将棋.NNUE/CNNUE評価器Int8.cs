@@ -115,7 +115,7 @@ public sealed class CNNUE評価器Int8
         for (int 列 = 1; 列 <= 9; 列++)
         {
             var 駒 = 盤面.Get駒(列, 段);
-            if (駒 == null) continue;
+            if (!駒.Is有効) continue;
             int sq = (段 - 1) * 9 + (列 - 1);
             int player = 駒.手番 == E手番.先手 ? 0 : 1;
             int piece = (int)駒.種類 - 1;
@@ -128,7 +128,7 @@ public sealed class CNNUE評価器Int8
             var 持ち駒 = p == 0 ? 盤面.先手持ち駒 : 盤面.後手持ち駒;
             for (int hi = 0; hi < HandPieces.Length; hi++)
             {
-                持ち駒.TryGetValue(HandPieces[hi], out int 枚数);
+                int 枚数 = 持ち駒[(int)HandPieces[hi]];
                 if (枚数 <= 0) continue;
                 AddInt8Row(h1, (HAND_BASE + p * 7 + hi) * L1_SIZE, 枚数 / 10f);
             }

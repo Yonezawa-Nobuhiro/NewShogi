@@ -10,9 +10,9 @@ public class C升VM : INotifyPropertyChanged
     private bool _是選択中;
     private bool _是移動候補;
 
-    public string 表示文字 => _升.駒?.Get表示文字() ?? "";
-    public bool 駒あり    => _升.駒 != null;
-    public bool 先手駒    => _升.駒?.手番 == E手番.先手;
+    public string 表示文字 => _升.駒.Is有効 ? _升.駒.Get表示文字() : "";
+    public bool 駒あり    => _升.駒.Is有効;
+    public bool 先手駒    => _升.駒.Is有効 && _升.駒.手番 == E手番.先手;
     public double 回転角度 => 駒あり && !先手駒 ? 180.0 : 0.0;
     public byte Byte値    => new S升座標((byte)_升.列, (byte)_升.段).Byte値;
 

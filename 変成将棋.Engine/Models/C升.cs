@@ -4,7 +4,7 @@ public class C升
 {
     public int 列 { get; }
     public int 段 { get; }
-    public C駒? 駒 { get; set; }
+    public C駒 駒 { get; set; }
 
     public C升(int 列, int 段)
     {

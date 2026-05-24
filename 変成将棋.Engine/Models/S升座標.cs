@@ -31,6 +31,9 @@ public readonly struct S升座標
     // ビットボード用線形インデックス (段-1)*9 + (列-1) → 0〜80
     public int 線形インデックス => ((段 - 1) * 9) + (列 - 1);
 
+    // 線形インデックスから升座標に変換（ビットイテレーション用）
+    public static S升座標 FromLinear(int idx) => new((byte)(idx % 9 + 1), (byte)(idx / 9 + 1));
+
     public bool Equals(S升座標 other) => _値 == other._値;
     public override string ToString() => Is有効 ? $"{段}段{列}列" : "なし";
 }

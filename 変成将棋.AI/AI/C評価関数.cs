@@ -42,7 +42,7 @@ public static class C評価関数
         for (int 列 = 1; 列 <= 9; 列++)
         {
             var 駒 = 盤面.Get駒(列, 段);
-            if (駒 == null) continue;
+            if (!駒.Is有効) continue;
 
             int 前進度 = 駒.手番 == E手番.先手 ? (9 - 段) : (段 - 1);
             int 価値   = 駒価値[(int)駒.種類];
@@ -114,11 +114,11 @@ public static class C評価関数
         return 前進 + 中央;
     }
 
-    private static int 持ち駒スコア(Dictionary<E駒種, int> 持ち駒, int[] 駒価値)
+    private static int 持ち駒スコア(int[] 持ち駒, int[] 駒価値)
     {
         int total = 0;
-        foreach (var (種類, 枚数) in 持ち駒)
-            if (枚数 > 0) total += 駒価値[(int)種類] * 枚数;
+        for (int t = 1; t < 持ち駒.Length; t++)
+            if (持ち駒[t] > 0) total += 駒価値[t] * 持ち駒[t];
         return total;
     }
 
@@ -131,7 +131,7 @@ public static class C評価関数
         for (int 列 = 1; 列 <= 9; 列++)
         {
             var 駒 = 盤面.Get駒(列, 段);
-            if (駒 == null || 駒.手番 != 攻撃側) continue;
+            if (!駒.Is有効 || 駒.手番 != 攻撃側) continue;
             if (駒.種類 is E駒種.玉将 or E駒種.獅王) continue;
             int 距離 = Math.Max(Math.Abs(列 - 敵玉位置.列), Math.Abs(段 - 敵玉位置.段));
             if (距離 <= 3) score += 4 - 距離;
@@ -140,10 +140,10 @@ public static class C評価関数
     }
 
     // 持ち駒を敵陣（玉周辺3升以内）に打てる升数
-    private static int 打ち込みポテンシャル(E手番 手番, S升座標 敵玉位置, Dictionary<E駒種, int> 持ち駒)
+    private static int 打ち込みポテンシャル(E手番 手番, S升座標 敵玉位置, int[] 持ち駒)
     {
         int 枚数合計 = 0;
-        foreach (var (_, 枚数) in 持ち駒) 枚数合計 += 枚数;
+        for (int t = 1; t < 持ち駒.Length; t++) 枚数合計 += 持ち駒[t];
         if (枚数合計 == 0) return 0;
 
         // 敵玉周辺3×3升（玉自体含む）のうち打てる升の数
@@ -167,7 +167,8 @@ public static class C評価関数
         for (int 列 = 1; 列 <= 9; 列++)
         {
             var 升 = new S升座標((byte)列, (byte)段);
-            if (範囲.Contains(升) && 盤面.Get駒(列, 段)?.手番 == 攻撃側)
+            var _d = 盤面.Get駒(列, 段);
+            if (範囲.Contains(升) && _d.Is有効 && _d.手番 == 攻撃側)
                 危険++;
         }
         return 危険;

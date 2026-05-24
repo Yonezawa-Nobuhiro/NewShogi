@@ -18,7 +18,7 @@ public static class C利き管理
             {
                 var 升 = new S升座標((byte)列, (byte)段);
                 var 駒 = 盤面.Get駒(升);
-                if (駒 == null) continue;
+                if (!駒.Is有効) continue;
                 var 利き = Compute駒利き(駒.種類, 駒.手番, 升, 盤面);
                 if (駒.手番 == E手番.先手) 先手 = 先手.Or(利き);
                 else 後手 = 後手.Or(利き);

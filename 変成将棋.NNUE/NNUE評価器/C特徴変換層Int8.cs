@@ -96,7 +96,7 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
             for (int 列 = 1; 列 <= 9; 列++)
             {
                 var 駒 = 盤面.Get駒(列, 段);
-                if (駒 == null) continue;
+                if (!駒.Is有効) continue;
                 if (駒.種類 == E駒種.玉将 || 駒.種類 == E駒種.獅王) continue;
                 int 駒種番号 = To駒種番号(駒.種類);
                 if (駒種番号 < 0) continue;
@@ -120,10 +120,10 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
         short* w = (short*)_w1[局面区分];
         var 指した側  = 盤面.手番 == E手番.先手 ? E手番.後手 : E手番.先手;
         E駒種? 移動前駒種 = 手.Is打ち ? null
-            : 手.Is成り ? C駒.Get成り前(盤面.Get駒(手.Get移動先)!.種類)
-            : 盤面.Get駒(手.Get移動先)!.種類;
-        C駒? 取駒      = 取消.取り駒;
-        C駒? 獅子中取駒 = 取消.中間取り駒;
+            : 手.Is成り ? C駒.Get成り前(盤面.Get駒(手.Get移動先).種類)
+            : 盤面.Get駒(手.Get移動先).種類;
+        C駒 取駒      = 取消.取り駒;
+        C駒 獅子中取駒 = 取消.中間取り駒;
         int 自玉升 = To升番号(盤面.Find玉(視点));
         var 指した側持ち駒 = 指した側 == E手番.先手 ? 盤面.先手持ち駒 : 盤面.後手持ち駒;
 
@@ -138,7 +138,7 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
                     int 移動先升 = To升番号(手.Get移動先);
                     int 敵区分値 = 指した側 == 視点 ? 0 : 1;
                     VAdd(pAcc, w + Calc駒位置番号(自玉升, 敵区分値, 駒種番号, 移動先升));
-                    指した側持ち駒.TryGetValue(駒種, out int 現在枚数);
+                    int 現在枚数 = 指した側持ち駒[(int)駒種];
                     Add持駒差分(pAcc, w, 自玉升, 駒種, 視点, 指した側, -1, 現在枚数);
                 }
             }
@@ -163,17 +163,17 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
                 if (移動後駒種番号 >= 0)
                     VAdd(pAcc, w + Calc駒位置番号(自玉升, 敵区分値, 移動後駒種番号, 移動先升));
 
-                if (取駒 != null)
+                if (取駒.Is有効)
                 {
                     int 取敵区分 = 取駒.手番 == 視点 ? 0 : 1;
                     int 取駒種番号 = To駒種番号(取駒.種類);
                     if (取駒種番号 >= 0)
                         VSub(pAcc, w + Calc駒位置番号(自玉升, 取敵区分, 取駒種番号, 移動先升));
                     var 取基本種 = C駒.Get成り前(取駒.種類);
-                    指した側持ち駒.TryGetValue(取基本種, out int 取現在枚数);
+                    int 取現在枚数 = 指した側持ち駒[(int)取基本種];
                     Add持駒差分(pAcc, w, 自玉升, 取基本種, 視点, 指した側, +1, 取現在枚数);
                 }
-                if (獅子中取駒 != null)
+                if (獅子中取駒.Is有効)
                 {
                     int 中間升    = To升番号(手.Get中間);
                     int 中間敵区分 = 獅子中取駒.手番 == 視点 ? 0 : 1;
@@ -181,7 +181,7 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
                     if (中間駒種番号 >= 0)
                         VSub(pAcc, w + Calc駒位置番号(自玉升, 中間敵区分, 中間駒種番号, 中間升));
                     var 中間基本種 = C駒.Get成り前(獅子中取駒.種類);
-                    指した側持ち駒.TryGetValue(中間基本種, out int 中間現在枚数);
+                    int 中間現在枚数 = 指した側持ち駒[(int)中間基本種];
                     Add持駒差分(pAcc, w, 自玉升, 中間基本種, 視点, 指した側, +1, 中間現在枚数);
                 }
             }
@@ -200,10 +200,31 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
         float scale = L1_to_uint8_scale;
         fixed (short* pAcc = acc)
         {
-            if (Sse41.IsSupported)
+            if (Avx2.IsSupported)
             {
-                // 128ビット単位で処理: vpaddw 16要素ずつ → packuswb → 16 uint8
-                // AVX2 vpackuswb はレーン内変換なので 128ビット版を使う（シャッフル不要）
+                // AVX2: 256bit 単位で 16×int16 → 16×uint8 × 2 = 32バイト/iter
+                // vpackuswb はレーン内なので 128bit 版と同等（レーン間シャッフル不要）
+                // 16要素ループ→8要素ループに半減
+                var zero = Vector256<short>.Zero;
+                var max  = Vector256.Create((short)127);
+                for (int j = 0; j < L1数; j += 32)
+                {
+                    // j   .. j+15: lo 側 16×int16
+                    // j+16.. j+31: hi 側 16×int16
+                    var lo = Avx.LoadVector256(pAcc + j);
+                    var hi = Avx.LoadVector256(pAcc + j + 16);
+                    lo = Avx2.Max(Avx2.Min(lo, max), zero);
+                    hi = Avx2.Max(Avx2.Min(hi, max), zero);
+                    // packuswb: [lo0..15 | hi0..15] だとレーン内になるので
+                    // vpermq で下位128を[lo_lo|hi_lo]、上位128を[lo_hi|hi_hi]に並べ直す
+                    var packed32 = Avx2.PackUnsignedSaturate(lo, hi);
+                    // packed32 のレーン順: [lo0-7,hi0-7 | lo8-15,hi8-15] → permute で修正
+                    var permuted = Avx2.Permute4x64(packed32.AsInt64(), 0b_11_01_10_00).AsByte();
+                    Unsafe.WriteUnaligned(dst + j, permuted);
+                }
+            }
+            else if (Sse41.IsSupported)
+            {
                 var zero = Vector128<short>.Zero;
                 var max  = Vector128.Create((short)127);
                 for (int j = 0; j < L1数; j += 16)
@@ -212,7 +233,6 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
                     var hi = Sse2.LoadVector128(pAcc + j + 8);
                     lo = Sse41.Max(Sse41.Min(lo, max), zero);
                     hi = Sse41.Max(Sse41.Min(hi, max), zero);
-                    // packuswb: int16[8] + int16[8] → uint8[16] (sequential, no lane issue)
                     var packed = Sse2.PackUnsignedSaturate(lo, hi);
                     Unsafe.WriteUnaligned(dst + j, packed);
                 }
@@ -268,19 +288,19 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
     // ── 持駒ヘルパー ─────────────────────────────────────────────────────────
 
     private static void Add持駒(short* acc, short* w,
-        Dictionary<E駒種, int> 持ち駒, int 自玉升, int 敵区分値)
+        int[] 持ち駒, int 自玉升, int 敵区分値)
     {
-        持ち駒.TryGetValue(E駒種.歩兵, out int 歩枚数);
+        int 歩枚数 = 持ち駒[(int)E駒種.歩兵];
         VAdd(acc, w + Calc持駒歩番号(自玉升, 敵区分値, 歩枚数区分(歩枚数)));
 
         for (int si = 0; si < 小駒一覧.Length; si++)
         {
-            持ち駒.TryGetValue(小駒一覧[si], out int cnt);
+            int cnt = 持ち駒[(int)小駒一覧[si]];
             if (cnt > 0) VAdd(acc, w + Calc持駒小駒番号(自玉升, 敵区分値, si, cnt));
         }
         for (int li = 0; li < 大駒一覧.Length; li++)
         {
-            持ち駒.TryGetValue(大駒一覧[li], out int cnt);
+            int cnt = 持ち駒[(int)大駒一覧[li]];
             if (cnt > 0) VAdd(acc, w + Calc持駒大駒番号(自玉升, 敵区分値, li, cnt));
         }
     }

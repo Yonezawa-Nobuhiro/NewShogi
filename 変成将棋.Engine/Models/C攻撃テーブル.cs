@@ -81,24 +81,11 @@ public static class C攻撃テーブル
 
     // ─── 占有キー抽出ヘルパー ─────────────────────────────────────────
 
-    // 指定段の9bit占有キー（bit k-1 = k列の占有状態）
-    public static int GetRow占有(S利きビット bits, int 段)
-    {
-        int start = (段 - 1) * 9;
-        int key = 0;
-        for (int 列 = 1; 列 <= 9; 列++)
-            if (bits.GetBit(start + 列 - 1)) key |= 1 << (列 - 1);
-        return key;
-    }
+    // 指定段の9bit占有キー（シフト＋マスクで O(1)）
+    public static int GetRow占有(S利きビット bits, int 段) => bits.GetRowKey(段);
 
-    // 指定列の9bit占有キー（bit r-1 = r段の占有状態）
-    public static int GetCol占有(S利きビット bits, int 列)
-    {
-        int key = 0;
-        for (int 段 = 1; 段 <= 9; 段++)
-            if (bits.GetBit((段 - 1) * 9 + 列 - 1)) key |= 1 << (段 - 1);
-        return key;
-    }
+    // 指定列の9bit占有キー（PEXT命令で O(1)）
+    public static int GetCol占有(S利きビット bits, int 列) => bits.GetColKey(列);
 
     // 右斜め（列+段=const）の占有キー
     // 同じ対角上の升を段の昇順で bit0 から並べる

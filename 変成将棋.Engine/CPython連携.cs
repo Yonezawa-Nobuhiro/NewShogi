@@ -106,7 +106,7 @@ public static class CPython連携
             for (int 列 = 1; 列 <= 9; 列++)
             {
                 var 駒 = 盤面.Get駒(列, 段);
-                if (駒 == null) continue;
+                if (!駒.Is有効) continue;
                 int sq = (段 - 1) * 9 + (列 - 1);
                 int base_ch = 駒.手番 == E手番.先手 ? 0 : 16;
                 int ch = base_ch + (int)駒.種類 - 1;  // E駒種 1-16 → 0-15
@@ -117,8 +117,8 @@ public static class CPython連携
         // 持ち駒（先手 ch32-38 / 後手 ch39-45, 全升にブロードキャスト）
         for (int pi = 0; pi < 持ち駒順.Length; pi++)
         {
-            float 先 = 盤面.先手持ち駒.GetValueOrDefault(持ち駒順[pi], 0);
-            float 後 = 盤面.後手持ち駒.GetValueOrDefault(持ち駒順[pi], 0);
+            float 先 = 盤面.先手持ち駒[(int)持ち駒順[pi]];
+            float 後 = 盤面.後手持ち駒[(int)持ち駒順[pi]];
             int ch先 = 32 + pi;
             int ch後 = 39 + pi;
             for (int sq = 0; sq < 81; sq++)

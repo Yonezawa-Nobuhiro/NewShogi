@@ -1,9 +1,12 @@
 namespace 変成将棋.Models;
 
-public class C駒
+public readonly struct C駒
 {
     public E駒種 種類 { get; }
     public E手番 手番 { get; }
+
+    public static readonly C駒 空 = new(E駒種.なし, default);
+    public bool Is有効 => 種類 != E駒種.なし;
 
     public C駒(E駒種 種類, E手番 手番)
     {

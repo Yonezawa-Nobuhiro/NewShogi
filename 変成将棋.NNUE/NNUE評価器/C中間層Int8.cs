@@ -68,25 +68,31 @@ internal sealed unsafe class C中間層Int8 : IDisposable
         // ones: int16[16] = {1,1,...} — pmaddwd で int16ペア → int32 に使う
         var ones = Vector256.Create((short)1);
 
-        // 4出力ニューロンを同時処理（16グループ × 4 = 64出力）
-        for (int g = 0; g < L2; g += 4)
+        // 8出力ニューロンを同時処理（8グループ × 8 = 64出力）
+        // HSum 呼び出し回数を 64 → 32 に半減
+        for (int g = 0; g < L2; g += 8)
         {
             var acc0 = Vector256<int>.Zero;
             var acc1 = Vector256<int>.Zero;
             var acc2 = Vector256<int>.Zero;
             var acc3 = Vector256<int>.Zero;
+            var acc4 = Vector256<int>.Zero;
+            var acc5 = Vector256<int>.Zero;
+            var acc6 = Vector256<int>.Zero;
+            var acc7 = Vector256<int>.Zero;
 
-            // 各荷重行(512バイト)は 32バイトアライン済み → LoadAlignedVector256
             sbyte* w0 = W + (g + 0) * L1x2;
             sbyte* w1 = W + (g + 1) * L1x2;
             sbyte* w2 = W + (g + 2) * L1x2;
             sbyte* w3 = W + (g + 3) * L1x2;
+            sbyte* w4 = W + (g + 4) * L1x2;
+            sbyte* w5 = W + (g + 5) * L1x2;
+            sbyte* w6 = W + (g + 6) * L1x2;
+            sbyte* w7 = W + (g + 7) * L1x2;
 
             for (int i = 0; i < L1x2; i += 32)
             {
-                var a = Avx.LoadVector256(h1u8 + i);  // uint8[32]
-                // pmaddubsw: (uint8 × int8) ペア加算 → int16[16]
-                // pmaddwd:   int16[16] × 1 → int32[8] (隣接ペア和)
+                var a = Avx.LoadVector256(h1u8 + i);
                 acc0 = Avx2.Add(acc0, Avx2.MultiplyAddAdjacent(
                     Avx2.MultiplyAddAdjacent(a, Avx.LoadAlignedVector256(w0 + i)), ones));
                 acc1 = Avx2.Add(acc1, Avx2.MultiplyAddAdjacent(
@@ -95,13 +101,24 @@ internal sealed unsafe class C中間層Int8 : IDisposable
                     Avx2.MultiplyAddAdjacent(a, Avx.LoadAlignedVector256(w2 + i)), ones));
                 acc3 = Avx2.Add(acc3, Avx2.MultiplyAddAdjacent(
                     Avx2.MultiplyAddAdjacent(a, Avx.LoadAlignedVector256(w3 + i)), ones));
+                acc4 = Avx2.Add(acc4, Avx2.MultiplyAddAdjacent(
+                    Avx2.MultiplyAddAdjacent(a, Avx.LoadAlignedVector256(w4 + i)), ones));
+                acc5 = Avx2.Add(acc5, Avx2.MultiplyAddAdjacent(
+                    Avx2.MultiplyAddAdjacent(a, Avx.LoadAlignedVector256(w5 + i)), ones));
+                acc6 = Avx2.Add(acc6, Avx2.MultiplyAddAdjacent(
+                    Avx2.MultiplyAddAdjacent(a, Avx.LoadAlignedVector256(w6 + i)), ones));
+                acc7 = Avx2.Add(acc7, Avx2.MultiplyAddAdjacent(
+                    Avx2.MultiplyAddAdjacent(a, Avx.LoadAlignedVector256(w7 + i)), ones));
             }
 
-            // Vector256<int> 水平和 → スカラー
             output[g + 0] = MathF.Max(0f, HSum(acc0) * dq + b2[g + 0]);
             output[g + 1] = MathF.Max(0f, HSum(acc1) * dq + b2[g + 1]);
             output[g + 2] = MathF.Max(0f, HSum(acc2) * dq + b2[g + 2]);
             output[g + 3] = MathF.Max(0f, HSum(acc3) * dq + b2[g + 3]);
+            output[g + 4] = MathF.Max(0f, HSum(acc4) * dq + b2[g + 4]);
+            output[g + 5] = MathF.Max(0f, HSum(acc5) * dq + b2[g + 5]);
+            output[g + 6] = MathF.Max(0f, HSum(acc6) * dq + b2[g + 6]);
+            output[g + 7] = MathF.Max(0f, HSum(acc7) * dq + b2[g + 7]);
         }
     }
 
@@ -130,11 +147,13 @@ internal sealed unsafe class C中間層Int8 : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int HSum(Vector256<int> v)
     {
-        // 上半分と下半分を加算 → 128ビット × 4 int32
+        // 上半分と下半分を加算 → 4×int32
         var v128 = Sse2.Add(v.GetLower(), v.GetUpper());
-        // phaddd × 2 で 4→2→1
-        v128 = Ssse3.HorizontalAdd(v128, v128);
-        v128 = Ssse3.HorizontalAdd(v128, v128);
+        // phaddd より shuffle+add の方がスループット有利
+        var shuf = Sse2.Shuffle(v128, 0b_10_11_00_01);  // [1,0,3,2]
+        v128 = Sse2.Add(v128, shuf);                     // [0+1, 0+1, 2+3, 2+3]
+        shuf = Sse2.Shuffle(v128, 0b_00_00_10_10);       // [2+3, 2+3, 0+1, 0+1]
+        v128 = Sse2.Add(v128, shuf);
         return v128.GetElement(0);
     }
 }

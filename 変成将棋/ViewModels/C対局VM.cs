@@ -532,7 +532,7 @@ public class C対局VM : INotifyPropertyChanged
             else
             {
                 Deselect();
-                if (駒?.手番 == _盤面.手番) Select(升Byte);
+                if (駒.Is有効 && 駒.手番 == _盤面.手番) Select(升Byte);
             }
             return;
         }
@@ -556,7 +556,7 @@ public class C対局VM : INotifyPropertyChanged
             {
                 // 無効な升 → 中間モード解除、元の選択状態に戻す
                 Exit中間モード();
-                if (駒?.手番 == _盤面.手番 && 升Byte != _選択中Byte)
+                if (駒.Is有効 && 駒.手番 == _盤面.手番 && 升Byte != _選択中Byte)
                 {
                     Deselect();
                     Select(升Byte);
@@ -568,7 +568,7 @@ public class C対局VM : INotifyPropertyChanged
         // --- 通常モード ---
         if (_選択中Byte == null)
         {
-            if (駒?.手番 == _盤面.手番) Select(升Byte);
+            if (駒.Is有効 && 駒.手番 == _盤面.手番) Select(升Byte);
         }
         else if (升Byte == _選択中Byte)
         {
@@ -582,7 +582,7 @@ public class C対局VM : INotifyPropertyChanged
             else
                 Execute手(手リスト);
         }
-        else if (駒?.手番 == _盤面.手番)
+        else if (駒.Is有効 && 駒.手番 == _盤面.手番)
         {
             Deselect();
             Select(升Byte);
@@ -1022,7 +1022,8 @@ public class C対局VM : INotifyPropertyChanged
     private bool Is獅王選択中()
     {
         if (_選択中Byte == null) return false;
-        return _盤面.Get駒(new S升座標(_選択中Byte.Value))?.種類 == E駒種.獅王;
+        var _d = _盤面.Get駒(new S升座標(_選択中Byte.Value));
+        return _d.Is有効 && _d.種類 == E駒種.獅王;
     }
 
     private static int チェビシェフ距離(byte a, byte b)

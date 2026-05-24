@@ -263,6 +263,14 @@ public sealed class CαβAI : IプレイヤーAI
         return (最善手, 点数);
     }
 
+    public void PrintNNUEStat()
+    {
+        if (_nnue_i8 == null) return;
+        long s = _nnue_i8._stat_scratch, d = _nnue_i8._stat_diff;
+        long total = s + d;
+        Console.Error.WriteLine($"  NNUE: scratch={s:N0} ({(total>0?s*100.0/total:0):F1}%)  diff={d:N0} ({(total>0?d*100.0/total:0):F1}%)");
+    }
+
     public void Dispose()
     {
         _nnue_i8?.Dispose();
@@ -334,12 +342,12 @@ public sealed class CαβAI : IプレイヤーAI
             // 獅王2回移動は中間取りの場合があるので取消情報から取得できないが、
             // 移動先に駒があればそれ、なければ中間駒（獅王中取り）を使う
             var 移動先駒 = 盤面.Get駒(候補手集[i].Get移動先);
-            if (移動先駒 != null)
+            if (移動先駒.Is有効)
                 capScores[i] = _駒価値[(int)移動先駒.種類];
             else if (!候補手集[i].Is打ち)
             {
                 var 中間駒 = 盤面.Get駒(候補手集[i].Get中間);
-                capScores[i] = 中間駒 != null ? _駒価値[(int)中間駒.種類] : 0;
+                capScores[i] = 中間駒.Is有効 ? _駒価値[(int)中間駒.種類] : 0;
             }
             else
                 capScores[i] = 0;
@@ -391,7 +399,7 @@ public sealed class CαβAI : IプレイヤーAI
         _stat_nodes++;
 
         // 置換表ルックアップ
-        ulong hash = 盤面.ComputeZobristHash();
+        ulong hash = 盤面.αβハッシュ;
         bool ttヒット = _置換表.検索(hash, 残深さ, α, β, out int ttスコア, out S手 tt最善手);
         if (ttヒット) { _stat_ttヒット++; return ttスコア; }
 
@@ -467,7 +475,7 @@ public sealed class CαβAI : IプレイヤーAI
             if (score >= β)
             {
                 // 駒取りでない手のβカット → Killer & History 更新
-                if (!候補手集[i].Is打ち && 盤面.Get駒(候補手集[i].Get移動先) == null)
+                if (!候補手集[i].Is打ち && !盤面.Get駒(候補手集[i].Get移動先).Is有効)
                     静かな手更新(候補手集[i], 加算器深度, 残深さ);
                 _置換表.保存(hash, 残深さ, β, C置換表.下限, 候補手集[i]);
                 return β;
@@ -577,7 +585,7 @@ public sealed class CαβAI : IプレイヤーAI
         if (!手.Is打ち)
         {
             var 取り = 盤面.Get駒(手.Get移動先);
-            if (取り != null) return 500_000 + _駒価値[(int)取り.種類];
+            if (取り.Is有効) return 500_000 + _駒価値[(int)取り.種類];
         }
 
         // 3. Killer Move（静かな手のみ）
