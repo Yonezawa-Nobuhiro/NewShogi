@@ -963,9 +963,9 @@ public class C対局VM : INotifyPropertyChanged
     private void Update持ち駒枚数()
     {
         foreach (var vm in 先手持ち駒一覧)
-            vm.枚数 = _盤面.先手持ち駒.GetValueOrDefault(vm.種類, 0);
+            vm.枚数 = _盤面.先手持ち駒[(int)vm.種類];
         foreach (var vm in 後手持ち駒一覧)
-            vm.枚数 = _盤面.後手持ち駒.GetValueOrDefault(vm.種類, 0);
+            vm.枚数 = _盤面.後手持ち駒[(int)vm.種類];
     }
 
     // ===== 棋譜 =====

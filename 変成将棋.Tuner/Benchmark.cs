@@ -12,17 +12,21 @@ public static class Benchmark
         var board = new C盤面();
         board.Reset();
 
-        // 20手平均計測（10手ごとに盤面リセット）
+        // 1局通しで計測（手詰まりは新局面にリセットして継続）
+        const int 目標手数 = 200;
         int moves = 0;
         var sw = Stopwatch.StartNew();
 
-        for (int i = 0; i < 20; i++)
+        while (moves < 目標手数)
         {
             var 手 = ai.Get手(board);
-            if (手 == null) break;
+            if (手 == null)
+            {
+                board.Reset();
+                continue;
+            }
             board.Apply(手.Value);
             moves++;
-            if (moves % 10 == 0) board.Reset();
         }
 
         sw.Stop();

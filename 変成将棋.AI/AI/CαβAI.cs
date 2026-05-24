@@ -130,6 +130,12 @@ public sealed class CαβAI : IプレイヤーAI
     private const int KillerSlots = 2;
     private readonly S手[,] _killer;
 
+    // Lazy Update: 加算器を Apply 直後ではなく Eval 時に初めて更新する
+    // SetDirty → Eval 時に Refresh加算器 → 加算器更新という流れ
+    private readonly bool[]? _加算器dirty;
+    private readonly S手[]? _lazy手;
+    private readonly S取消情報[]? _lazy取消;
+
     // NNUE 評価器（どちらか片方のみロードされる）
     private readonly CNNUE評価器HalfKPInt8? _nnue_i8;  // INT8 優先
     private readonly CNNUE評価器?           _nnue;     // float フォールバック
@@ -165,6 +171,13 @@ public sealed class CαβAI : IプレイヤーAI
         int 最大探索深さ = _p.思考時間ms > 0 ? 99 : _p.探索深さ;
         int stackSize = 最大探索深さ + 22;  // +20: Quiescence Search の取り合い分
         _killer = new S手[最大探索深さ + 2, KillerSlots];
+
+        if (_nnue_i8 != null || _nnue != null)
+        {
+            _加算器dirty = new bool[stackSize];
+            _lazy手      = new S手[stackSize];
+            _lazy取消    = new S取消情報[stackSize];
+        }
 
         if (_nnue_i8 != null)
         {
@@ -306,8 +319,7 @@ public sealed class CαβAI : IプレイヤーAI
             }
 
             var 取消 = 盤面.Apply(候補手集[i]);
-            Copy加算器(0);
-            Update加算器(盤面, 0, 候補手集[i], 取消);
+            SetDirty(1, 候補手集[i], 取消);
             int 点数 = -Search(盤面, 深度 - 1, -詰点数, -α, 1, ct);
             盤面.Undo(候補手集[i], 取消);
 
@@ -326,8 +338,12 @@ public sealed class CαβAI : IプレイヤーAI
     {
         if (ct.IsCancellationRequested) return 0;
 
-        // stand-pat: 何もしない局面の評価。β以上なら即カット
-        int stand_pat = Eval(加算器深度, 盤面);
+        // 加算器を子ノードのために更新しておく（評価値は駒価値ベースで代替）
+        if (_加算器dirty != null && _加算器dirty[加算器深度])
+            Refresh加算器(加算器深度, 盤面);
+
+        // stand-pat: 駒価値ベースの簡易評価（駒取り連鎖局面での NNUE 多重呼び出しを回避）
+        int stand_pat = C評価関数.Evaluate(盤面, _p, _駒価値);
         if (stand_pat >= β) return β;
         if (stand_pat > α) α = stand_pat;
 
@@ -374,8 +390,7 @@ public sealed class CαβAI : IプレイヤーAI
                 盤面.Undo(候補手集[i], 取消);
                 continue;
             }
-            Copy加算器(加算器深度);
-            Update加算器(盤面, 加算器深度, 候補手集[i], 取消);
+            SetDirty(加算器深度 + 1, 候補手集[i], 取消);
             int score = -Quiesce(盤面, -β, -α, 加算器深度 + 1, ct);
             盤面.Undo(候補手集[i], 取消);
 
@@ -404,8 +419,20 @@ public sealed class CαβAI : IプレイヤーAI
         if (ttヒット) { _stat_ttヒット++; return ttスコア; }
 
         // Is自玉安全・staticEvalを1回だけ計算してNMP/Futility両方で共用
+        // 自玉不安全（王手）ノードは NMP も Futility も不要なので評価計算をスキップ
+        // ただし加算器は子ノードのために更新しておく必要がある
         bool 自玉安全 = C合法手生成器.Is自玉安全(盤面, 盤面.手番);
-        int staticEval = Eval(加算器深度, 盤面);
+        int staticEval;
+        if (自玉安全)
+        {
+            staticEval = Eval(加算器深度, 盤面);
+        }
+        else
+        {
+            if (_加算器dirty != null && _加算器dirty[加算器深度])
+                Refresh加算器(加算器深度, 盤面);
+            staticEval = 0;
+        }
 
         // Null Move Pruning: 王手されていない かつ staticEval >= β のとき手番をパスして浅く探索
         if (残深さ >= 3 && 自玉安全 && staticEval >= β)
@@ -460,8 +487,7 @@ public sealed class CαβAI : IプレイヤーAI
                 continue;
             }
 
-            Copy加算器(加算器深度);
-            Update加算器(盤面, 加算器深度, 候補手集[i], 取消);
+            SetDirty(加算器深度 + 1, 候補手集[i], 取消);
 
             // LMR: 3手目以降の静かな手（駒取り・TT最善手でない）は depth-2 で探索（深さ5以上で効果的）
             int reduction = (i >= 2 && 残深さ >= 4 && scores[i] < 95) ? 2 : 0;
@@ -498,6 +524,9 @@ public sealed class CαβAI : IプレイヤーAI
 
     private int Eval(int 加算器深度, C盤面 盤面)
     {
+        if (_加算器dirty != null && _加算器dirty[加算器深度])
+            Refresh加算器(加算器深度, 盤面);
+
         if (_nnue_i8 != null)
         {
             return _nnue_i8.加算器から評価(
@@ -513,6 +542,23 @@ public sealed class CαβAI : IプレイヤーAI
                 盤面.手番);
         }
         return C評価関数.Evaluate(盤面, _p, _駒価値);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private void SetDirty(int 子深さ, S手 手, S取消情報 取消)
+    {
+        if (_加算器dirty == null) return;
+        _加算器dirty[子深さ] = true;
+        _lazy手![子深さ]   = 手;
+        _lazy取消![子深さ] = 取消;
+    }
+
+    private void Refresh加算器(int 子深さ, C盤面 盤面)
+    {
+        int 親深さ = 子深さ - 1;
+        Copy加算器(親深さ);
+        Update加算器(盤面, 親深さ, _lazy手![子深さ], _lazy取消![子深さ]);
+        _加算器dirty![子深さ] = false;
     }
 
     private void Init加算器Root(C盤面 盤面)
@@ -533,6 +579,7 @@ public sealed class CαβAI : IプレイヤーAI
             _nnue.加算器計算(盤面, E手番.先手, _局面区分_先手[0], _加算器_先手![0]);
             _nnue.加算器計算(盤面, E手番.後手, _局面区分_後手[0], _加算器_後手![0]);
         }
+        if (_加算器dirty != null) _加算器dirty[0] = false;
     }
 
     private void Copy加算器(int 親深さ)
