@@ -46,6 +46,166 @@ public static class C合法手生成器
         return 手数;
     }
 
+    // Quiescence Search 専用: 駒取り手のみを生成する（持ち駒打ちは除く）
+    public static int Generate駒取り手(C盤面 盤面, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        var 手番 = 盤面.手番;
+        for (int 段 = 1; 段 <= 9; 段++)
+        for (int 列 = 1; 列 <= 9; 列++)
+        {
+            var 升 = new S升座標((byte)列, (byte)段);
+            var 駒 = 盤面.Get駒(升);
+            if (駒 is null || 駒.手番 != 手番) continue;
+            手数 += Generate駒取り移動(盤面, 升, 駒.種類, 手番, バッファ[手数..]);
+        }
+        return 手数;
+    }
+
+    private static int Generate駒取り移動(
+        C盤面 盤面, S升座標 元, E駒種 種類, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        switch (種類)
+        {
+            case E駒種.香車:
+                手数 += Add駒取りスライド(盤面, 元, 種類, 手番,
+                    手番 == E手番.先手 ? 香車先手スライド : 香車後手スライド, バッファ);
+                break;
+            case E駒種.角行:
+                手数 += Add駒取りスライド(盤面, 元, 種類, 手番, 角行スライド, バッファ);
+                break;
+            case E駒種.飛車:
+                手数 += Add駒取りスライド(盤面, 元, 種類, 手番, 飛車スライド, バッファ);
+                break;
+            case E駒種.竪行:
+                手数 += Add駒取りスライド(盤面, 元, 種類, 手番, 竪行スライド, バッファ);
+                手数 += Add駒取り固定(盤面, 元, 種類, 手番, バッファ[手数..]);
+                break;
+            case E駒種.龍馬:
+                手数 += Add駒取りスライド(盤面, 元, 種類, 手番, 角行スライド, バッファ);
+                手数 += Add駒取り固定(盤面, 元, 種類, 手番, バッファ[手数..]);
+                break;
+            case E駒種.龍王:
+                手数 += Add駒取りスライド(盤面, 元, 種類, 手番, 飛車スライド, バッファ);
+                手数 += Add駒取り固定(盤面, 元, 種類, 手番, バッファ[手数..]);
+                break;
+            case E駒種.獅王:
+                手数 += Generate獅王駒取り移動(盤面, 元, 手番, バッファ);
+                break;
+            case E駒種.玉将:
+                手数 += Add玉将駒取り移動(盤面, 元, 手番, バッファ);
+                break;
+            default:
+                手数 += Add駒取り固定(盤面, 元, 種類, 手番, バッファ);
+                break;
+        }
+        return 手数;
+    }
+
+    // スライド先で最初に当たった敵駒のみ追加
+    private static int Add駒取りスライド(
+        C盤面 盤面, S升座標 元, E駒種 種類, E手番 手番, int[] 方向一覧, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        foreach (int 方向 in 方向一覧)
+        {
+            foreach (byte 移動先Byte in C到達升テーブル.Getスライドレイ(方向, 元))
+            {
+                var 先 = new S升座標(移動先Byte);
+                var 先駒 = 盤面.Get駒(先);
+                if (先駒?.手番 == 手番) break;        // 自駒でブロック
+                if (先駒!= null)                       // 敵駒 = 駒取り手を追加
+                {
+                    Add手または両手(種類, 手番, 元, 先, バッファ, ref 手数);
+                    break;
+                }
+                // 空升はスキップ（続行）
+            }
+        }
+        return 手数;
+    }
+
+    // 移動先が敵駒の手のみ追加
+    private static int Add駒取り固定(
+        C盤面 盤面, S升座標 元, E駒種 種類, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        foreach (byte 移動先Byte in C到達升テーブル.Get到達升(種類, 手番, 元))
+        {
+            var 先 = new S升座標(移動先Byte);
+            var 先駒 = 盤面.Get駒(先);
+            if (先駒== null || 先駒.手番 == 手番) continue; // 空升・自駒はスキップ
+            Add手または両手(種類, 手番, 元, 先, バッファ, ref 手数);
+        }
+        return 手数;
+    }
+
+    // 獅王の駒取り手のみを生成
+    private static int Generate獅王駒取り移動(
+        C盤面 盤面, S升座標 元, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        var 隣接升一覧 = C到達升テーブル.Get獅王隣接(元);
+
+        foreach (byte 中間Byte in 隣接升一覧)
+        {
+            var 中間 = new S升座標(中間Byte);
+            var 中間駒 = 盤面.Get駒(中間);
+            if (中間駒?.手番 == 手番) continue; // 自駒には通過不可
+
+            // 1回移動: 中間升に敵駒がある場合のみ生成
+            if (中間駒!= null)
+                バッファ[手数++] = S手.Create通常(元, 中間);
+
+            // 2回移動: 中間を素通り（または中間取り）して先升へ
+            foreach (byte 先Byte in C到達升テーブル.Get獅王隣接(中間))
+            {
+                var 先 = new S升座標(先Byte);
+                if (先.Byte値 == 元.Byte値) continue; // 元に戻る＋取りなし
+                if (盤面.Get駒(先)?.手番 == 手番) continue;
+                var 先駒 = 盤面.Get駒(先);
+                // 中間取り または 先取り のどちらかが発生する場合のみ
+                if (中間駒!= null || 先駒!= null)
+                    バッファ[手数++] = S手.Create獅王2回移動(元, 中間, 先);
+            }
+        }
+
+        // タイプB: チェビシェフ距離2ジャンプで敵駒を取る
+        foreach (byte 先Byte in C到達升テーブル.Get獅王遠達(元))
+        {
+            var 先 = new S升座標(先Byte);
+            var 先駒 = 盤面.Get駒(先);
+            if (先駒== null || 先駒.手番 == 手番) continue;
+            バッファ[手数++] = S手.Create通常(元, 先);
+        }
+
+        return 手数;
+    }
+
+    // 玉将の駒取り手のみ生成
+    private static int Add玉将駒取り移動(C盤面 盤面, S升座標 元, E手番 手番, Span<S手> バッファ)
+    {
+        int 手数 = 0;
+        foreach (byte b in C到達升テーブル.Get到達升(E駒種.玉将, 手番, 元))
+        {
+            var 先 = new S升座標(b);
+            var 先駒 = 盤面.Get駒(先);
+            if (先駒== null || 先駒.手番 == 手番) continue; // 空升・自駒はスキップ
+
+            if (Is玉将成り可能(盤面, 手番, 元, 先))
+            {
+                バッファ[手数++] = S手.Create通常(元, 先, 成り: true);
+                バッファ[手数++] = S手.Create通常(元, 先, 成り: false);
+            }
+            else
+            {
+                バッファ[手数++] = S手.Create通常(元, 先, 成り: false);
+            }
+        }
+        return 手数;
+    }
+
     // ===== 駒種別の移動生成 =====
 
     private static int Generate駒移動(

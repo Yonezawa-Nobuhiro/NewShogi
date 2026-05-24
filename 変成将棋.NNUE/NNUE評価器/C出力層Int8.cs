@@ -26,7 +26,7 @@ internal sealed class C出力層Int8
         int k = 0;
         for (; k <= CNNUE評価器HalfKPInt8.L2数 - SIMD幅; k += SIMD幅)
             vSum += new Vector<float>(L2出力[k..]) * new Vector<float>(_w3, k);
-        for (int m = 0; m < SIMD幅; m++) score += vSum[m];
+        score += Vector.Dot(vSum, Vector<float>.One);
         for (; k < CNNUE評価器HalfKPInt8.L2数; k++)
             score += L2出力[k] * _w3[k];
         return score;

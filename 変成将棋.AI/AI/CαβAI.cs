@@ -124,6 +124,12 @@ public sealed class CαβAI : IプレイヤーAI
     // デバッグ統計
     internal long _stat_nodes, _stat_ttヒット, _stat_nmp発動, _stat_lmr適用;
 
+    // History Heuristic: [移動元byte][移動先byte] のβカット蓄積スコア
+    private readonly int[,] _history = new int[256, 256];
+    // Killer Move: 深さごとに最大2手保持
+    private const int KillerSlots = 2;
+    private readonly S手[,] _killer;
+
     // NNUE 評価器（どちらか片方のみロードされる）
     private readonly CNNUE評価器HalfKPInt8? _nnue_i8;  // INT8 優先
     private readonly CNNUE評価器?           _nnue;     // float フォールバック
@@ -157,7 +163,8 @@ public sealed class CαβAI : IプレイヤーAI
         }
 
         int 最大探索深さ = _p.思考時間ms > 0 ? 99 : _p.探索深さ;
-        int stackSize = 最大探索深さ + 2;
+        int stackSize = 最大探索深さ + 22;  // +20: Quiescence Search の取り合い分
+        _killer = new S手[最大探索深さ + 2, KillerSlots];
 
         if (_nnue_i8 != null)
         {
@@ -274,7 +281,7 @@ public sealed class CαβAI : IプレイヤーAI
         Init加算器Root(盤面);
 
         Span<int> 点数集 = stackalloc int[n];
-        for (int i = 0; i < n; i++) 点数集[i] = ScoreMove(盤面, 候補手集[i]);
+        for (int i = 0; i < n; i++) 点数集[i] = ScoreMove(盤面, 候補手集[i], 0);
 
         for (int i = 0; i < n; i++)
         {
@@ -305,6 +312,72 @@ public sealed class CαβAI : IプレイヤーAI
         return (最善手, α);
     }
 
+    // ── 静止探索（駒取りのみ継続して局面を安定させる） ────────────────────
+
+    private int Quiesce(C盤面 盤面, int α, int β, int 加算器深度, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return 0;
+
+        // stand-pat: 何もしない局面の評価。β以上なら即カット
+        int stand_pat = Eval(加算器深度, 盤面);
+        if (stand_pat >= β) return β;
+        if (stand_pat > α) α = stand_pat;
+
+        // 駒取り手専用生成器を使用（全手生成より高速）
+        Span<S手> 候補手集 = stackalloc S手[C合法手生成器.最大手数];
+        Span<int> capScores = stackalloc int[C合法手生成器.最大手数];
+        int 合法手数 = C合法手生成器.Generate駒取り手(盤面, 候補手集);
+
+        // 各駒取り手のスコア（取る駒の価値）を計算
+        for (int i = 0; i < 合法手数; i++)
+        {
+            // 獅王2回移動は中間取りの場合があるので取消情報から取得できないが、
+            // 移動先に駒があればそれ、なければ中間駒（獅王中取り）を使う
+            var 移動先駒 = 盤面.Get駒(候補手集[i].Get移動先);
+            if (移動先駒 != null)
+                capScores[i] = _駒価値[(int)移動先駒.種類];
+            else if (!候補手集[i].Is打ち)
+            {
+                var 中間駒 = 盤面.Get駒(候補手集[i].Get中間);
+                capScores[i] = 中間駒 != null ? _駒価値[(int)中間駒.種類] : 0;
+            }
+            else
+                capScores[i] = 0;
+        }
+
+        for (int i = 0; i < 合法手数; i++)
+        {
+            // 遅延選択ソート（大きい駒取りを優先）
+            int best = i;
+            for (int j = i + 1; j < 合法手数; j++)
+                if (capScores[j] > capScores[best]) best = j;
+            if (best != i)
+            {
+                (候補手集[i], 候補手集[best]) = (候補手集[best], 候補手集[i]);
+                (capScores[i], capScores[best]) = (capScores[best], capScores[i]);
+            }
+
+            // Delta Pruning: ソート済みなのでこの手以降全部 α に届かないなら打ち切り
+            if (stand_pat + capScores[i] < α) break;
+
+            var 取消 = 盤面.Apply(候補手集[i]);
+            if (!C合法手生成器.Is自玉安全(盤面, 盤面.手番))
+            {
+                盤面.Undo(候補手集[i], 取消);
+                continue;
+            }
+            Copy加算器(加算器深度);
+            Update加算器(盤面, 加算器深度, 候補手集[i], 取消);
+            int score = -Quiesce(盤面, -β, -α, 加算器深度 + 1, ct);
+            盤面.Undo(候補手集[i], 取消);
+
+            if (score >= β) return β;
+            if (score > α) α = score;
+        }
+
+        return α;
+    }
+
     // ── Negamax + αβ枝刈り + 置換表 ─────────────────────────────────
 
     private int Search(C盤面 盤面, int 残深さ, int α, int β, int 加算器深度,
@@ -313,7 +386,7 @@ public sealed class CαβAI : IプレイヤーAI
         if (ct.IsCancellationRequested) return 0;
 
         if (残深さ <= 0)
-            return Eval(加算器深度, 盤面);
+            return Quiesce(盤面, α, β, 加算器深度, ct);
 
         _stat_nodes++;
 
@@ -322,26 +395,33 @@ public sealed class CαβAI : IプレイヤーAI
         bool ttヒット = _置換表.検索(hash, 残深さ, α, β, out int ttスコア, out S手 tt最善手);
         if (ttヒット) { _stat_ttヒット++; return ttスコア; }
 
+        // Is自玉安全・staticEvalを1回だけ計算してNMP/Futility両方で共用
+        bool 自玉安全 = C合法手生成器.Is自玉安全(盤面, 盤面.手番);
+        int staticEval = Eval(加算器深度, 盤面);
+
         // Null Move Pruning: 王手されていない かつ staticEval >= β のとき手番をパスして浅く探索
-        if (残深さ >= 3 && C合法手生成器.Is自玉安全(盤面, 盤面.手番))
+        if (残深さ >= 3 && 自玉安全 && staticEval >= β)
         {
-            int staticEval = Eval(加算器深度, 盤面);
-            if (staticEval >= β)
-            {
-                _stat_nmp発動++;
-                盤面.ApplyNullMove();
-                int nullScore = -Search(盤面, 残深さ - 3, -β, -β + 1, 加算器深度, ct);
-                盤面.UndoNullMove();
-                if (nullScore >= β) return β;
-            }
+            _stat_nmp発動++;
+            盤面.ApplyNullMove();
+            int nullScore = -Search(盤面, 残深さ - 3, -β, -β + 1, 加算器深度, ct);
+            盤面.UndoNullMove();
+            if (nullScore >= β) return β;
         }
+
+        // Futility Pruning: 浅いノードで staticEval + マージン < α なら静かな手をスキップ
+        // 残深さ1=飛車1枚分、残深さ2=飛車2枚分 をマージンとして使用
+        int futilityMargin = 残深さ <= 1 ? _駒価値[(int)E駒種.飛車]
+                           : 残深さ == 2 ? _駒価値[(int)E駒種.飛車] * 2 : int.MaxValue;
+        bool futilityActive = 自玉安全 && futilityMargin < int.MaxValue
+                           && staticEval + futilityMargin < α;
 
         Span<S手> 候補手集 = stackalloc S手[C合法手生成器.最大手数];
         int 合法手数 = C合法手生成器.Generate擬似合法手(盤面, 候補手集);
 
         Span<int> scores = stackalloc int[合法手数];
         for (int i = 0; i < 合法手数; i++)
-            scores[i] = ScoreMove(盤面, 候補手集[i], tt最善手);
+            scores[i] = ScoreMove(盤面, 候補手集[i], 加算器深度, tt最善手);
 
         int 元α = α;
         S手 最善手 = default;
@@ -364,6 +444,14 @@ public sealed class CαβAI : IプレイヤーAI
                 continue;
             }
             合法手あり = true;
+
+            // Futility Pruning: 静かな手（駒取り・成りでない）をスキップ
+            if (futilityActive && scores[i] < 500_000 && !候補手集[i].Is成り)
+            {
+                盤面.Undo(候補手集[i], 取消);
+                continue;
+            }
+
             Copy加算器(加算器深度);
             Update加算器(盤面, 加算器深度, 候補手集[i], 取消);
 
@@ -378,6 +466,9 @@ public sealed class CαβAI : IプレイヤーAI
             盤面.Undo(候補手集[i], 取消);
             if (score >= β)
             {
+                // 駒取りでない手のβカット → Killer & History 更新
+                if (!候補手集[i].Is打ち && 盤面.Get駒(候補手集[i].Get移動先) == null)
+                    静かな手更新(候補手集[i], 加算器深度, 残深さ);
                 _置換表.保存(hash, 残深さ, β, C置換表.下限, 候補手集[i]);
                 return β;
             }
@@ -475,16 +566,45 @@ public sealed class CαβAI : IプレイヤーAI
 
     // ── 手順スコアリング ─────────────────────────────────────────────
 
-    private int ScoreMove(C盤面 盤面, S手 手, S手 tt最善手 = default)
+    private int ScoreMove(C盤面 盤面, S手 手, int 深さIdx, S手 tt最善手 = default)
     {
-        // TT最善手を最優先（手番並べ替りの核心）
+        // 1. TT最善手
         if (手.移動元 == tt最善手.移動元 && 手.移動先 == tt最善手.移動先 &&
             手.中間   == tt最善手.中間   && 手.手フラグ == tt最善手.手フラグ)
-        {
             return 1_000_000;
+
+        // 2. 駒取り（打ち駒は取りなし）
+        if (!手.Is打ち)
+        {
+            var 取り = 盤面.Get駒(手.Get移動先);
+            if (取り != null) return 500_000 + _駒価値[(int)取り.種類];
         }
-        if (手.Is打ち) return 0;
-        var 取り = 盤面.Get駒(手.Get移動先);
-        return 取り != null ? _駒価値[(int)取り.種類] : 手.Is成り ? 50 : 0;
+
+        // 3. Killer Move（静かな手のみ）
+        int ki = Math.Min(深さIdx, _killer.GetLength(0) - 1);
+        if (手.移動元 == _killer[ki, 0].移動元 && 手.移動先 == _killer[ki, 0].移動先) return 400_000;
+        if (手.移動元 == _killer[ki, 1].移動元 && 手.移動先 == _killer[ki, 1].移動先) return 300_000;
+
+        // 4. History + 成りボーナス
+        int h = 手.Is打ち ? 0 : _history[手.移動元, 手.移動先];
+        return (手.Is成り ? 50 : 0) + h;
+    }
+
+    private void 静かな手更新(S手 手, int 深さIdx, int 残深さ)
+    {
+        if (手.Is打ち) return;
+        // Killer: 同じ手でなければシフトして先頭に挿入
+        int ki = Math.Min(深さIdx, _killer.GetLength(0) - 1);
+        if (手.移動元 != _killer[ki, 0].移動元 || 手.移動先 != _killer[ki, 0].移動先)
+        {
+            _killer[ki, 1] = _killer[ki, 0];
+            _killer[ki, 0] = 手;
+        }
+        // History: 深さの二乗を加算し、オーバーフロー時に全体を半減
+        _history[手.移動元, 手.移動先] += 残深さ * 残深さ;
+        if (_history[手.移動元, 手.移動先] > 10_000_000)
+            for (int a = 0; a < 256; a++)
+                for (int b = 0; b < 256; b++)
+                    _history[a, b] >>= 1;
     }
 }
