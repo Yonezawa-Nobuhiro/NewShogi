@@ -59,6 +59,7 @@
         </Menu.Resources>
         <MenuItem Header="対局">
             <MenuItem Header="盤面初期化" Command="{Binding 盤面初期化コマンド}"/>
+            <MenuItem Header="SFENを設定..." Click="OnSFEN設定Click"/>
             <Separator Background="#555"/>
             <MenuItem Header="対局者設定">
 
@@ -118,6 +119,10 @@
                           Command="{Binding 先CPU後αβコマンド}"
                           IsCheckable="True"
                           IsChecked="{Binding Mode先CPU後αβ, Mode=OneWay}"/>
+                <MenuItem Header="先手αβ ／ 後手αβ（NNUE vs NNUE）"
+                          Command="{Binding 先αβ後αβコマンド}"
+                          IsCheckable="True"
+                          IsChecked="{Binding Mode先αβ後αβ, Mode=OneWay}"/>
                 <Separator Background="#555"/>
                 <MenuItem Header="先手人間 ／ 後手評価関数"
                           Command="{Binding 先人間後評価コマンド}"

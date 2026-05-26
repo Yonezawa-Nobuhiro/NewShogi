@@ -1,5 +1,6 @@
 using System.Text.Json;
 using 変成将棋.AI;
+using 変成将棋.AI.αβAI;
 using 変成将棋.Models;
 
 // モード 1 (比較):  <paramsA.json> <paramsB.json> <numGames> [seed]
@@ -11,12 +12,31 @@ using 変成将棋.Models;
 const int MaxMoves = 250;
 const int RandomOpeningMoves = 8;   // 最初の N 手はランダム（多様性確保）
 
+if (args.Length >= 1 && args[0] == "think")
+{
+    // think <sfen> [params.json]
+    string sfen = args[1];
+    string tParams = args.Length > 2 ? args[2] : "変成将棋.AI/αβパラメータ.json";
+    var board = new C盤面(sfen);
+    using var ai = new CαβAI(tParams);
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var 手 = ai.Get手(board);
+    sw.Stop();
+    ai.PrintNNUEStat();
+    Console.WriteLine($"  最善手: {手}  ({sw.Elapsed.TotalMilliseconds:F0} ms)");
+    return 0;
+}
+
 if (args.Length >= 1 && args[0] == "benchmark")
 {
-    // benchmark [params.json] [--no-nnue]
+    // benchmark [params.json] [--no-nnue] [--save <path.kf>] [--max <moves>]
     bool nnue = !args.Contains("--no-nnue");
     string bParams = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "変成将棋.AI/αβパラメータ.json";
-    Benchmark.Run(bParams, nnue);
+    int saveIdx = Array.IndexOf(args, "--save");
+    string? kifPath = saveIdx >= 0 && saveIdx + 1 < args.Length ? args[saveIdx + 1] : null;
+    int maxIdx = Array.IndexOf(args, "--max");
+    int maxMoves = maxIdx >= 0 && maxIdx + 1 < args.Length ? int.Parse(args[maxIdx + 1]) : 250;
+    Benchmark.Run(bParams, nnue, kifPath, maxMoves);
     return 0;
 }
 
@@ -97,17 +117,20 @@ if (args.Length >= 1 && args[0] == "generate")
     int numGames      = int.Parse(args[2]);
     string outDir     = args[3];
     int seed          = args.Length > 4 ? int.Parse(args[4]) : 0;
-    var rng           = new Random(seed);
 
     Directory.CreateDirectory(outDir);
 
-    for (int g = 0; g < numGames; g++)
+    int genCompleted = 0;
+    var genLock = new object();
+
+    Parallel.For(0, numGames, new ParallelOptions { MaxDegreeOfParallelism = 6 }, g =>
     {
         using var ai先手 = new CαβAI(paramsPath, "NOBOOK");
         using var ai後手 = new CαβAI(paramsPath, "NOBOOK");
 
         var board = new C盤面();
         board.Reset();
+        var rng = new Random(seed + g);
 
         var sfens = new List<string> { board.ToSFEN() };
 
@@ -125,15 +148,14 @@ if (args.Length >= 1 && args[0] == "generate")
             {
                 var current = board.手番 == E手番.先手 ? ai先手 : ai後手;
                 手 = current.Get手(board);
-                if (手 == null) break;
+                if (!手.HasValue) break;
             }
             board.Apply(手.Value);
             sfens.Add(board.ToSFEN());
         }
 
-        // .kf 形式で保存
-        string ts   = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        string path = Path.Combine(outDir, $"αβ_{ts}_{g:D4}.kf");
+        // .kf 形式で保存（ファイル名は g で一意化）
+        string path = Path.Combine(outDir, $"αβ_{g:D4}.kf");
         using var w = new StreamWriter(path, false, System.Text.Encoding.UTF8);
         w.WriteLine("# 変成将棋棋譜");
         w.WriteLine($"# 日時: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -141,8 +163,13 @@ if (args.Length >= 1 && args[0] == "generate")
         w.WriteLine();
         foreach (var s in sfens) w.WriteLine(s);
 
-        Console.Error.Write($"\r  [{g + 1}/{numGames}] {path}");
-    }
+        lock (genLock)
+        {
+            genCompleted++;
+            Console.Error.WriteLine($"  [{genCompleted}/{numGames}] {path}");
+        }
+    });
+
     Console.Error.WriteLine("\n完了");
     return 0;
 }

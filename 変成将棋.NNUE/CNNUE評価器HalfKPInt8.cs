@@ -83,9 +83,9 @@ public sealed unsafe class CNNUE評価器HalfKPInt8 : IDisposable
             var W3           = ReadFloat(br, L2数);
             float B3         = br.ReadSingle();
 
-            var ft = new C特徴変換層Int8(W1, B1, l1ToUint8);
+            var ft = new C特徴変換層Int8(W1, B1);
             var l2 = new C中間層Int8(W2, B2, dequantScale);
-            var l3 = new C出力層Int8(W3, B3);
+            var l3 = new C出力層Int8(W3, B3, dequantScale);
             return new CNNUE評価器HalfKPInt8(ft, l2, l3);
         }
         catch { return null; }
@@ -141,7 +141,7 @@ public sealed unsafe class CNNUE評価器HalfKPInt8 : IDisposable
             _特徴変換層.ToUint8(先手L1, buf + L1数);
         }
 
-        Span<float> L2出力 = stackalloc float[L2数];
+        Span<short> L2出力 = stackalloc short[L2数];
         _中間層.Forward(buf, L2出力);
         return (int)(_出力層.Forward(L2出力) * 2000f);
     }

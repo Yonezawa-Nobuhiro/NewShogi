@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows.Input;
 using System.Windows.Threading;
 using 変成将棋.AI;
+using 変成将棋.AI.αβAI;
 using 変成将棋.Models;
 using static 変成将棋.Models.C合法手生成器;
 
@@ -30,6 +31,8 @@ public class C対局VM : INotifyPropertyChanged
     private static readonly IプレイヤーAI _ランダムAI  = new CランダムAI();
     private static readonly IプレイヤーAI _αβAI      = new CαβAI();
     private static readonly IプレイヤーAI _評価関数AI = new CαβAI(nnueEnabled: false);
+    private static readonly IプレイヤーAI _αβAI先手  = new CαβAI();
+    private static readonly IプレイヤーAI _αβAI後手  = new CαβAI();
 
     private bool _ゲームオーバー;
     private bool _千日手;
@@ -122,8 +125,9 @@ public class C対局VM : INotifyPropertyChanged
     public bool Mode先CPU後AI   =>  _先手CPU &&  _後手AI  && !_先手AI  && !_後手CPU && αβなし && 評価なし;
     public bool Mode先人間後αβ  => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && !_先手αβ &&  _後手αβ;
     public bool Mode先αβ後人間  => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI &&  _先手αβ && !_後手αβ;
-    public bool Mode先αβ後CPU   =>  _先手αβ  &&  _後手CPU;
-    public bool Mode先CPU後αβ   =>  _先手CPU &&  _後手αβ;
+    public bool Mode先αβ後CPU   =>  _先手αβ  &&  _後手CPU && !_後手αβ;
+    public bool Mode先CPU後αβ   =>  _先手CPU &&  _後手αβ && !_先手αβ;
+    public bool Mode先αβ後αβ    =>  _先手αβ  &&  _後手αβ && !_先手CPU && !_後手CPU;
     public bool Mode先人間後評価 => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし && !_先手評価 &&  _後手評価;
     public bool Mode先評価後人間 => !_先手CPU && !_後手CPU && !_先手AI && !_後手AI && αβなし &&  _先手評価 && !_後手評価;
     public bool Mode先評価後CPU  =>  _先手評価 &&  _後手CPU;
@@ -167,6 +171,7 @@ public class C対局VM : INotifyPropertyChanged
     public ICommand 先αβ後人間コマンド  { get; }
     public ICommand 先αβ後CPUコマンド   { get; }
     public ICommand 先CPU後αβコマンド   { get; }
+    public ICommand 先αβ後αβコマンド    { get; }
     public ICommand 先人間後評価コマンド { get; }
     public ICommand 先評価後人間コマンド { get; }
     public ICommand 先評価後CPUコマンド  { get; }
@@ -212,6 +217,7 @@ public class C対局VM : INotifyPropertyChanged
         先αβ後人間コマンド  = new CRelayCommand(() => Setαβ対局者(先手αβ: true,  後手αβ: false));
         先αβ後CPUコマンド   = new CRelayCommand(() => Setαβ対CPU対局者(先手αβ: true));
         先CPU後αβコマンド   = new CRelayCommand(() => Setαβ対CPU対局者(先手αβ: false));
+        先αβ後αβコマンド    = new CRelayCommand(Setαβ対αβ対局者);
         先人間後評価コマンド = new CRelayCommand(() => Set評価関数対局者(先手評価: false, 後手評価: true));
         先評価後人間コマンド = new CRelayCommand(() => Set評価関数対局者(先手評価: true,  後手評価: false));
         先評価後CPUコマンド  = new CRelayCommand(() => Set評価関数対CPU対局者(先手評価: true));
@@ -240,11 +246,52 @@ public class C対局VM : INotifyPropertyChanged
 
     // ===== メニュー処理 =====
 
+    private static void 全AI対局開始()
+    {
+        foreach (var ai in new[] { _αβAI, _評価関数AI, _αβAI先手, _αβAI後手 })
+            ai.対局開始();
+    }
+
     private void 盤面初期化()
     {
         _自動対局タイマー?.Stop();
+        全AI対局開始();
         Deselect();
         _盤面.Reset();
+        foreach (var vm in 升一覧) vm.Refresh();
+        Update持ち駒枚数();
+        OnPropertyChanged(nameof(手番表示));
+        foreach (var b in _最終手升)
+            if (_升VMMap.TryGetValue(b, out var vm)) vm.Is最終手 = false;
+        _最終手升.Clear();
+        _先手合計 = TimeSpan.Zero;
+        _後手合計 = TimeSpan.Zero;
+        _手番開始 = DateTime.Now;
+        _対局開始済み = false;
+        OnPropertyChanged(nameof(先手時間表示));
+        OnPropertyChanged(nameof(後手時間表示));
+        _千日手 = false;
+        _千日手敗者 = null;
+        _局面頻度.Clear();
+        _王手状態履歴.Clear();
+        _棋譜ハッシュ.Clear();
+        _棋譜後手番.Clear();
+        ゲームオーバー = false;
+        _棋譜SFENs.Clear();
+        _棋譜SFENs.Add(_盤面.ToSFEN());
+        _棋譜ハッシュ.Add(_盤面.ComputeZobristHash());
+        _棋譜後手番.Add(_盤面.手番 == E手番.後手);
+        _再生位置 = -1;
+        Notify棋譜Changed();
+        Try自動();
+    }
+
+    public void SFENを設定(string sfen)
+    {
+        _自動対局タイマー?.Stop();
+        全AI対局開始();
+        Deselect();
+        _盤面.Reset(sfen);
         foreach (var vm in 升一覧) vm.Refresh();
         Update持ち駒枚数();
         OnPropertyChanged(nameof(手番表示));
@@ -345,6 +392,16 @@ public class C対局VM : INotifyPropertyChanged
         Try自動();
     }
 
+    private void Setαβ対αβ対局者()
+    {
+        _先手αβ = true; _後手αβ = true;
+        _先手CPU = false; _後手CPU = false;
+        _先手AI  = false; _後手AI  = false;
+        _先手評価 = false; _後手評価 = false;
+        NotifyモードChanged();
+        Try自動();
+    }
+
     public void AIモデルを読み込む(string path)
     {
         _AIプレイヤー?.Dispose();
@@ -367,6 +424,7 @@ public class C対局VM : INotifyPropertyChanged
         OnPropertyChanged(nameof(Mode先αβ後人間));
         OnPropertyChanged(nameof(Mode先αβ後CPU));
         OnPropertyChanged(nameof(Mode先CPU後αβ));
+        OnPropertyChanged(nameof(Mode先αβ後αβ));
         OnPropertyChanged(nameof(Mode先人間後評価));
         OnPropertyChanged(nameof(Mode先評価後人間));
         OnPropertyChanged(nameof(Mode先評価後CPU));
@@ -405,6 +463,13 @@ public class C対局VM : INotifyPropertyChanged
         {
             Stop自動対局();
             if (!_ゲームオーバー) _ = AI対CPU対局Async();
+            return;
+        }
+
+        if (_先手αβ && _後手αβ)
+        {
+            Stop自動対局();
+            if (!_ゲームオーバー) _ = αβ対αβ対局Async();
             return;
         }
 
@@ -489,6 +554,29 @@ public class C対局VM : INotifyPropertyChanged
                     手 = _ランダムAI.Get手(_盤面);
                     await Task.Delay(150, cts.Token);
                 }
+                if (cts.Token.IsCancellationRequested) break;
+                if (手 == null) { ゲームオーバー = true; break; }
+                Apply手(手.Value);
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (_自動対局CTS == cts) _自動対局CTS = null;
+        }
+    }
+
+    private async Task αβ対αβ対局Async()
+    {
+        var cts = new CancellationTokenSource();
+        _自動対局CTS = cts;
+        try
+        {
+            while (!_ゲームオーバー && !cts.Token.IsCancellationRequested)
+            {
+                var ai   = _盤面.手番 == E手番.先手 ? _αβAI先手 : _αβAI後手;
+                var sfen = _盤面.ToSFEN();
+                var 手   = await Task.Run(() => ai.Get手(new C盤面(sfen)), cts.Token);
                 if (cts.Token.IsCancellationRequested) break;
                 if (手 == null) { ゲームオーバー = true; break; }
                 Apply手(手.Value);

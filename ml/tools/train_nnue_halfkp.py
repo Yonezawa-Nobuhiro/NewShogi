@@ -15,7 +15,9 @@ L1 を Sparse Embedding Lookup で実装し、Dense Linear より大幅に高速
       --out  変成将棋.AI/nnue_weights_halfkp.bin
 """
 
-import argparse, struct, re, sys
+import argparse, struct, re, sys, time, math
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 from pathlib import Path
 
 import numpy as np
@@ -283,12 +285,30 @@ class NNUE_HalfKP(nn.Module):
 
 # ── データロード ──────────────────────────────────────────────────────────────
 
+def _fmt_time(seconds: float) -> str:
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _bar(done: int, total: int, width: int = 28) -> str:
+    ratio = min(done / total, 1.0) if total > 0 else 0.0
+    filled = int(width * ratio)
+    arrow = '>' if filled < width else ''
+    dashes = '-' * max(0, width - filled - len(arrow))
+    return f"[{'=' * filled}{arrow}{dashes}]"
+
+
 def load_dataset(tsv_path: str, max_score: int = 3000):
     """TSV(SFEN\tscore) を読み込んで学習用テンソルを作る。"""
-    print(f"  読み込み中: {tsv_path}")
+    path = Path(tsv_path)
+    size_mb = path.stat().st_size / 1024 / 1024
+    print(f"  読み込み中: {tsv_path}  ({size_mb:.1f} MB)")
+    t0 = time.time()
     records = []
     with open(tsv_path, encoding='utf-8') as f:
-        for line in f:
+        for i, line in enumerate(f):
             line = line.strip()
             if not line:
                 continue
@@ -302,15 +322,20 @@ def load_dataset(tsv_path: str, max_score: int = 3000):
             if abs(score) > max_score:
                 continue
             records.append((parts[0], score / 2000.0))
+            if (i + 1) % 100_000 == 0:
+                print(f"\r    {i+1:,} 行読み込み済み ({len(records):,} 採用)  {_fmt_time(time.time()-t0)}", end='', flush=True)
 
-    print(f"  {len(records):,} サンプル → 特徴量変換中...")
+    print(f"\r  {len(records):,} サンプル読み込み完了  ({_fmt_time(time.time()-t0)})              ")
+    print(f"  特徴量変換中...")
 
     bucket_s_list, idx_s_list = [], []
     bucket_g_list, idx_g_list = [], []
     stm_list, target_list = [], []
 
     skipped = 0
-    for sfen, target in records:
+    total = len(records)
+    t1 = time.time()
+    for i, (sfen, target) in enumerate(records):
         # side to move
         parts = sfen.split()
         stm = 0 if (len(parts) < 2 or parts[1] == 'b') else 1
@@ -319,6 +344,11 @@ def load_dataset(tsv_path: str, max_score: int = 3000):
         ids_s, bkt_s = sfen_to_halfkp(sfen, 0)
         # 後手視点
         ids_g, bkt_g = sfen_to_halfkp(sfen, 1)
+
+        if (i + 1) % 50_000 == 0 or (i + 1) == total:
+            pct = (i + 1) / total * 100
+            eta = (time.time() - t1) / (i + 1) * (total - i - 1)
+            print(f"\r    {_bar(i+1, total)}  {i+1:,}/{total:,}  {pct:3.0f}%  eta {_fmt_time(eta)}", end='', flush=True)
 
         if not ids_s or not ids_g:
             skipped += 1
@@ -336,6 +366,7 @@ def load_dataset(tsv_path: str, max_score: int = 3000):
         stm_list.append(stm)
         target_list.append(target)
 
+    print(f"\r  特徴量変換完了  {total-skipped:,} サンプル  ({_fmt_time(time.time()-t1)})              ")
     if skipped:
         print(f"  スキップ: {skipped} サンプル（玉なし）")
 
@@ -495,16 +526,22 @@ def train(data_path: str, out_path: str, epochs: int = 20, batch: int = 4096,
     sched    = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
     loss_fn  = nn.MSELoss()
 
-    print(f"\n{'epoch':>5}  {'train':>9}  {'val':>9}", flush=True)
-    print('-' * 28, flush=True)
+    n_batches = math.ceil(len(tr) / batch)
+    print(f"\n  学習開始  train {len(tr):,}  val {len(va):,}  "
+          f"{n_batches} バッチ/epoch  epochs={epochs}", flush=True)
+    print(f"  {'─'*70}", flush=True)
 
+    t_total = time.time()
     best_val = float('inf')
+    best_ep  = 0
+
     for ep in range(1, epochs + 1):
         model.train()
         perm_tr = tr[torch.randperm(len(tr))]
         tr_loss = 0.0
+        t_ep = time.time()
 
-        for start in range(0, len(perm_tr), batch):
+        for bi_idx, start in enumerate(range(0, len(perm_tr), batch)):
             bi = perm_tr[start:start+batch]
             bs, is_, bg, ig, sm, yt = to_dev(
                 bkt_s[bi], idx_s[bi], bkt_g[bi], idx_g[bi], stm[bi], y[bi])
@@ -515,6 +552,16 @@ def train(data_path: str, out_path: str, epochs: int = 20, batch: int = 4096,
             opt.step()
             tr_loss += loss.item() * len(bi)
 
+            done = bi_idx + 1
+            elapsed = time.time() - t_ep
+            eta = elapsed / done * (n_batches - done) if done > 0 else 0
+            cur_loss = tr_loss / (done * batch)
+            print(
+                f"\r  Epoch {ep:2d}/{epochs}  {_bar(done, n_batches)}  "
+                f"{done}/{n_batches}  {done/n_batches*100:3.0f}%  "
+                f"eta {_fmt_time(eta)}  loss {cur_loss:.5f}",
+                end='', flush=True)
+
         tr_loss /= len(tr)
 
         model.eval()
@@ -524,16 +571,27 @@ def train(data_path: str, out_path: str, epochs: int = 20, batch: int = 4096,
             va_loss = loss_fn(model(bs, is_, bg, ig, sm), yv).item()
 
         sched.step()
-        print(f"{ep:>5}  {tr_loss:>9.5f}  {va_loss:>9.5f}", flush=True)
+        ep_time = time.time() - t_ep
+        is_best = va_loss < best_val
+        best_mark = '  ★最良' if is_best else ''
 
-        if va_loss < best_val:
+        print(
+            f"\r  Epoch {ep:2d}/{epochs}  {_bar(n_batches, n_batches)}  "
+            f"{n_batches}/{n_batches}  100%  "
+            f"{_fmt_time(ep_time)}  train {tr_loss:.5f}  val {va_loss:.5f}{best_mark}",
+            flush=True)
+
+        if is_best:
             best_val = va_loss
+            best_ep  = ep
             export_weights(model, out_path)
             if export_int8:
                 export_weights_nhki(model, export_int8)
 
-    print(f"\n最良 val_loss: {best_val:.5f}")
-    print(f"出力: {out_path}")
+    elapsed_total = time.time() - t_total
+    print(f"\n  {'─'*70}")
+    print(f"  完了  合計 {_fmt_time(elapsed_total)}  最良 val={best_val:.5f} (epoch {best_ep})")
+    print(f"  出力: {out_path}")
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────

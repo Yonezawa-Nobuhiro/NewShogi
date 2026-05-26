@@ -54,7 +54,8 @@
       "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $env:STAT=\"1\"; dotnet run --project 変成将棋.Tuner -c Release -- benchmark 変成将棋.AI/αβパラメータ.json 2>&1)",
       "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; dotnet build 変成将棋.Tuner -c Release 2>&1 | Select-String \"エラー|error\" | Select-Object -Last 3; $env:STAT=\"1\"; dotnet run --project 変成将棋.Tuner -c Release -- benchmark 変成将棋.AI/αβパラメータ.json 2>&1 | Select-Object -Last 5)",
       "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; dotnet build 変成将棋.Tuner -c Release 2>&1 | Select-String \"エラー\" | Select-Object -Last 1; $env:STAT=\"1\"; dotnet run --project 変成将棋.Tuner -c Release -- benchmark 変成将棋.AI/αβパラメータ.json 2>&1 | Select-Object -Last 6)",
-      "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $sw = [System.Diagnostics.Stopwatch]::StartNew\\(\\); dotnet run --project 変成将棋.Tuner -c Release -- eval_data 変成将棋.AI/αβパラメータ.json 12 ml/checkpoints/test_d4_12g.tsv 2>&1; $sw.Stop\\(\\); Write-Host \"合計: $\\($sw.Elapsed.TotalSeconds.ToString\\('F1'\\)\\)秒\")"
+      "PowerShell(cd \"c:\\\\Users\\\\nobuh\\\\source\\\\変則将棋.vscode\"; $sw = [System.Diagnostics.Stopwatch]::StartNew\\(\\); dotnet run --project 変成将棋.Tuner -c Release -- eval_data 変成将棋.AI/αβパラメータ.json 12 ml/checkpoints/test_d4_12g.tsv 2>&1; $sw.Stop\\(\\); Write-Host \"合計: $\\($sw.Elapsed.TotalSeconds.ToString\\('F1'\\)\\)秒\")",
+      "Read(//c/Users/nobuh/AppData/Local/Temp/claude/c--Users-nobuh-source------vscode/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\nobuh\\source\\�ϑ�����.vscode\\ml"

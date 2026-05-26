@@ -39,15 +39,12 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
     private readonly nint[] _w1;  // [BK] → short*(FS × L1数), aligned
     private readonly nint[] _b1;  // [BK] → short*(L1数), aligned
 
-    internal readonly float L1_to_uint8_scale;  // int16アキュム → uint8 変換係数
-
     private bool _disposed;
 
     // ── 構築 ─────────────────────────────────────────────────────────────────
 
-    internal C特徴変換層Int8(short[][] w1, short[][] b1, float l1ToUint8Scale)
+    internal C特徴変換層Int8(short[][] w1, short[][] b1)
     {
-        L1_to_uint8_scale = l1ToUint8Scale;
         _w1 = new nint[BK];
         _b1 = new nint[BK];
         for (int bk = 0; bk < BK; bk++)
@@ -197,28 +194,19 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal void ToUint8(short[] acc, byte* dst)
     {
-        float scale = L1_to_uint8_scale;
         fixed (short* pAcc = acc)
         {
             if (Avx2.IsSupported)
             {
-                // AVX2: 256bit 単位で 16×int16 → 16×uint8 × 2 = 32バイト/iter
-                // vpackuswb はレーン内なので 128bit 版と同等（レーン間シャッフル不要）
-                // 16要素ループ→8要素ループに半減
                 var zero = Vector256<short>.Zero;
                 var max  = Vector256.Create((short)127);
                 for (int j = 0; j < L1数; j += 32)
                 {
-                    // j   .. j+15: lo 側 16×int16
-                    // j+16.. j+31: hi 側 16×int16
                     var lo = Avx.LoadVector256(pAcc + j);
                     var hi = Avx.LoadVector256(pAcc + j + 16);
                     lo = Avx2.Max(Avx2.Min(lo, max), zero);
                     hi = Avx2.Max(Avx2.Min(hi, max), zero);
-                    // packuswb: [lo0..15 | hi0..15] だとレーン内になるので
-                    // vpermq で下位128を[lo_lo|hi_lo]、上位128を[lo_hi|hi_hi]に並べ直す
                     var packed32 = Avx2.PackUnsignedSaturate(lo, hi);
-                    // packed32 のレーン順: [lo0-7,hi0-7 | lo8-15,hi8-15] → permute で修正
                     var permuted = Avx2.Permute4x64(packed32.AsInt64(), 0b_11_01_10_00).AsByte();
                     Unsafe.WriteUnaligned(dst + j, permuted);
                 }
@@ -240,10 +228,7 @@ internal sealed unsafe class C特徴変換層Int8 : IDisposable
             else
             {
                 for (int j = 0; j < L1数; j++)
-                {
-                    int v = (int)(pAcc[j] * scale);
-                    dst[j] = v <= 0 ? (byte)0 : v >= 127 ? (byte)127 : (byte)v;
-                }
+                    dst[j] = pAcc[j] <= 0 ? (byte)0 : pAcc[j] >= 127 ? (byte)127 : (byte)pAcc[j];
             }
         }
     }

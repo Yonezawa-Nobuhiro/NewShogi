@@ -1,3 +1,4 @@
+using 変成将棋.AI.αβAI;
 using 変成将棋.Models;
 
 namespace 変成将棋.AI;
