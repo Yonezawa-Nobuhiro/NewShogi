@@ -82,6 +82,13 @@ partial class CαβAI
         bool ttヒット = _置換表.検索(hash, 残深さ, α, β, out int ttスコア, out S手 tt最善手);
         if (ttヒット) { _stat_ttヒット++; return ttスコア; }
 
+        // 高速1手詰み判定（残深さ >= 2 で呼ぶ。残深さ1以下は Quiesce に任せる）
+        if (残深さ >= 2)
+        {
+            var 詰み手 = C詰将棋探索.Get1手詰み(盤面);
+            if (詰み手.HasValue) return 詰点数 - 1;
+        }
+
         // Is自玉安全・staticEvalを1回だけ計算してNMP/Futility両方で共用
         // 自玉不安全（王手）ノードは NMP も Futility も不要なので評価計算をスキップ
         // ただし加算器は子ノードのために更新しておく必要がある
@@ -93,9 +100,13 @@ partial class CαβAI
         }
         else
         {
-            if (_加算器dirty != null && _加算器dirty[加算器深度])
+            if (_加算器dirty![加算器深度])
                 Refresh加算器(加算器深度, 盤面);
             staticEval = 0;
+
+            // Check Extension: 王手中は探索深さを+1延長（スタック上限内のみ）
+            if (加算器深度 < _加算器dirty.Length - 3)
+                残深さ++;
         }
 
 // Null Move Pruning: 王手されていない かつ staticEval >= β のとき手番をパスして浅く探索
@@ -136,8 +147,9 @@ partial class CαβAI
                 (scores[i],   scores[best])   = (scores[best],   scores[i]);
             }
 
+            var 指した側 = 盤面.手番;
             var 取消 = 盤面.Apply(候補手集[i]);
-            if (!C合法手生成器.Is自玉安全(盤面, 盤面.手番))
+            if (!C合法手生成器.Is自玉安全(盤面, 指した側))
             {
                 盤面.Undo(候補手集[i], 取消);
                 continue;

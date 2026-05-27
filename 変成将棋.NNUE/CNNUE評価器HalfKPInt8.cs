@@ -94,7 +94,11 @@ public sealed unsafe class CNNUE評価器HalfKPInt8 : IDisposable
     // ── 局面区分 ─────────────────────────────────────────────────────────────
 
     public static int 局面区分番号取得(E駒種 自玉, E駒種 敵玉)
-        => CNNUE評価器.局面区分番号取得(自玉, 敵玉);
+    {
+        if (自玉 != E駒種.獅王 && 敵玉 != E駒種.獅王) return 0;
+        if (自玉 != E駒種.獅王)                        return 1;
+        return 2;
+    }
 
     // ── 統計（デバッグ用） ────────────────────────────────────────────────────
     public long _stat_scratch;

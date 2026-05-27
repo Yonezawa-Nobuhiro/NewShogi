@@ -16,14 +16,20 @@ if (args.Length >= 1 && args[0] == "think")
 {
     // think <sfen> [params.json]
     string sfen = args[1];
-    string tParams = args.Length > 2 ? args[2] : "変成将棋.AI/αβパラメータ.json";
+    string tParams = args.Length > 2 && !args[2].StartsWith("--") ? args[2] : "変成将棋.AI/αβパラメータ.json";
+    bool tNnue = !args.Contains("--no-nnue");
     var board = new C盤面(sfen);
-    using var ai = new CαβAI(tParams);
+    using var ai = new CαβAI(tParams, nnueEnabled: tNnue);
     var sw = System.Diagnostics.Stopwatch.StartNew();
     var 手 = ai.Get手(board);
     sw.Stop();
     ai.PrintNNUEStat();
-    Console.WriteLine($"  最善手: {手}  ({sw.Elapsed.TotalMilliseconds:F0} ms)");
+    if (手 == null)
+        Console.WriteLine($"  最善手: (なし)  ({sw.Elapsed.TotalMilliseconds:F0} ms)");
+    else if (手.Value.Is打ち)
+        Console.WriteLine($"  最善手: {手.Value.Get打ち駒}打ち→{手.Value.Get移動先.列}{手.Value.Get移動先.段}  ({sw.Elapsed.TotalMilliseconds:F0} ms)");
+    else
+        Console.WriteLine($"  最善手: {手.Value.Get移動元.列}{手.Value.Get移動元.段}→{手.Value.Get移動先.列}{手.Value.Get移動先.段}{(手.Value.Is成り ? "成" : "")}  ({sw.Elapsed.TotalMilliseconds:F0} ms)");
     return 0;
 }
 
@@ -50,19 +56,21 @@ if (args.Length >= 1 && args[0] == "eval_data")
 
 if (args.Length >= 1 && args[0] == "win_rate")
 {
-    // win_rate <params.json> <numGames> [seed]  — C評価関数同士の自己対局で先手/後手勝率を集計
-    if (args.Length < 3) { Console.Error.WriteLine("Usage: win_rate <params.json> <numGames> [seed]"); return 1; }
+    // win_rate <params.json> <numGames> [seed] [--nnue] — 自己対局で先手/後手勝率を集計
+    if (args.Length < 3) { Console.Error.WriteLine("Usage: win_rate <params.json> <numGames> [seed] [--nnue]"); return 1; }
     string wrParams  = args[1];
     int    wrGames   = int.Parse(args[2]);
-    int    wrSeed    = args.Length > 3 ? int.Parse(args[3]) : 0;
+    int    wrSeed    = args.Length > 3 && args[3] != "--nnue" ? int.Parse(args[3]) : 0;
+    bool   wrNnue    = args.Contains("--nnue");
     int    sente勝ち = 0, gote勝ち = 0, 引き分け = 0;
     int    completed = 0;
     var    gameLock  = new object();
+    Console.Error.WriteLine($"  NNUE: {wrNnue}");
 
     Parallel.For(0, wrGames, g =>
     {
-        using var ai先手 = new CαβAI(wrParams, "NOBOOK", nnueEnabled: false);
-        using var ai後手 = new CαβAI(wrParams, "NOBOOK", nnueEnabled: false);
+        using var ai先手 = new CαβAI(wrParams, "NOBOOK", nnueEnabled: wrNnue);
+        using var ai後手 = new CαβAI(wrParams, "NOBOOK", nnueEnabled: wrNnue);
         var board = new C盤面();
         board.Reset();
         var rng = new Random(wrSeed + g);

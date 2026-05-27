@@ -126,6 +126,10 @@ public readonly struct S利きビット
         return -1;
     }
 
+    // 立っているビット数（POPCNT命令利用）
+    public int PopCount()
+        => BitOperations.PopCount(_下) + BitOperations.PopCount(_上);
+
     // 最大インデックス（LZCNT命令利用）。空の場合は -1
     public int FindLastBit()
     {

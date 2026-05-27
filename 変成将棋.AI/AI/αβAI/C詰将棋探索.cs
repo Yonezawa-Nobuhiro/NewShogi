@@ -32,6 +32,43 @@ public static class C詰将棋探索
         return null;
     }
 
+    /// <summary>
+    /// 高速1手詰み判定。反復深化・再帰なしの専用実装。
+    /// 詰み手を返す、なければ null。
+    /// </summary>
+    public static S手? Get1手詰み(C盤面 盤面)
+    {
+        Span<S手> buf = stackalloc S手[C合法手生成器.最大手数];
+        Span<S手> 受け = stackalloc S手[C合法手生成器.最大手数];
+        int n = C合法手生成器.Get合法手(盤面, buf);
+
+        for (int i = 0; i < n; i++)
+        {
+            var 取消 = 盤面.Apply(buf[i]);
+
+            // 相手玉を直接取れる手 → 即詰み
+            if (!盤面.Find玉(盤面.手番).Is盤内)
+            {
+                盤面.Undo(buf[i], 取消);
+                return buf[i];
+            }
+
+            // 王手でなければスキップ
+            if (C合法手生成器.Is自玉安全(盤面, 盤面.手番))
+            {
+                盤面.Undo(buf[i], 取消);
+                continue;
+            }
+
+            // 受け方の合法手が0なら詰み
+            int m = C合法手生成器.Get合法手(盤面, 受け);
+            盤面.Undo(buf[i], 取消);
+
+            if (m == 0) return buf[i];
+        }
+        return null;
+    }
+
     // 攻め方のターン: 王手手のうち少なくとも一つで詰むか。詰む手を返す、なければ null。
     private static S手? Or詰み(C盤面 盤面, int 残手数, CancellationToken ct)
     {

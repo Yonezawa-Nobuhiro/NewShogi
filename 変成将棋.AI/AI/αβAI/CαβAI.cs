@@ -1,4 +1,5 @@
 using System.IO;
+using 変成将棋.AI.駒得評価;
 using 変成将棋.Models;
 using 変成将棋.NNUE;
 using static 変成将棋.AI.αβAI.αβパラメータ;
@@ -11,14 +12,14 @@ namespace 変成将棋.AI.αβAI;
 /// 評価関数の優先順位:
 ///   1. CNNUE評価器HalfKPInt8 (NHKI形式: nnue_weights_halfkp_i8.bin) — INT16加算器+pmaddubsw
 ///   2. CNNUE評価器            (NHKP形式: nnue_weights_halfkp.bin)   — float32
-///   3. C評価関数              (静的評価: 駒得・王危険度・位置ボーナス)
+///   3. C駒得評価器            (差分更新対応・駒価値 × PopCountビットボード、最終フォールバック)
 /// </summary>
 public sealed partial class CαβAI : IプレイヤーAI
 {
     private const int 詰点数 = 10_000_000;
 
     private readonly αβパラメータ _p;
-    private readonly int[] _駒価値 = new int[17];
+    private readonly int[] _駒価値 = new int[17];  // αβパラメータの駒価値を /8 した byte スケール
     private readonly C定跡書? _定跡書;
     private readonly C置換表 _置換表;
 
@@ -48,19 +49,20 @@ public sealed partial class CαβAI : IプレイヤーAI
     private readonly S手[]? _lazy手;
     private readonly S取消情報[]? _lazy取消;
 
-    // NNUE 評価器（どちらか片方のみロードされる）
-    private readonly CNNUE評価器HalfKPInt8? _nnue_i8;  // INT8 優先
-    private readonly CNNUE評価器?           _nnue;     // float フォールバック
+    private readonly CNNUE評価器HalfKPInt8? _nnue_i8;
 
-    // アキュムレータスタック — INT8用 (short) または float用 で排他利用
+    // アキュムレータスタック（INT8用）
     private readonly short[][]? _加算器_先手_i8;
     private readonly short[][]? _加算器_後手_i8;
-    private readonly float[][]? _加算器_先手;
-    private readonly float[][]? _加算器_後手;
 
-    // バケット番号スタック（INT8/float 共通）
+    // バケット番号スタック
     private readonly int[]? _局面区分_先手;
     private readonly int[]? _局面区分_後手;
+
+    // 駒得評価器（NNUE なし時の差分更新フォールバック）
+    private readonly C駒得評価器? _駒得評価器;
+    private readonly int[]? _加算器_先手_駒得;  // [stackSize] フラット
+    private readonly int[]? _加算器_後手_駒得;
 
     public CαβAI(string? paramsPath = null, string? bookPath = null, bool nnueEnabled = true)
     {
@@ -74,22 +76,17 @@ public sealed partial class CαβAI : IプレイヤーAI
                 ? Path.GetDirectoryName(Path.GetFullPath(paramsPath)) ?? AppContext.BaseDirectory
                 : AppContext.BaseDirectory;
 
-            // INT8 優先ロード
             _nnue_i8 = CNNUE評価器HalfKPInt8.Load(Path.Combine(dir, "nnue_weights_halfkp_i8.bin"));
-            if (_nnue_i8 == null)
-                _nnue = CNNUE評価器.Load(Path.Combine(dir, "nnue_weights_halfkp.bin"));
         }
 
         int 最大探索深さ = _p.思考時間ms > 0 ? 99 : _p.探索深さ;
         int stackSize = 最大探索深さ + 12;  // +10: Quiesce 最大深さ + 余裕2
         _killer = new S手[最大探索深さ + 2, KillerSlots];
 
-        if (_nnue_i8 != null || _nnue != null)
-        {
-            _加算器dirty = new bool[stackSize];
-            _lazy手      = new S手[stackSize];
-            _lazy取消    = new S取消情報[stackSize];
-        }
+        // 差分更新スタック（NNUE または C駒得評価器 どちらでも使う）
+        _加算器dirty = new bool[stackSize];
+        _lazy手      = new S手[stackSize];
+        _lazy取消    = new S取消情報[stackSize];
 
         if (_nnue_i8 != null)
         {
@@ -103,17 +100,13 @@ public sealed partial class CαβAI : IプレイヤーAI
                 _加算器_後手_i8[d] = new short[CNNUE評価器HalfKPInt8.L1数];
             }
         }
-        else if (_nnue != null)
+        else
         {
-            _加算器_先手   = new float[stackSize][];
-            _加算器_後手   = new float[stackSize][];
-            _局面区分_先手 = new int[stackSize];
-            _局面区分_後手 = new int[stackSize];
-            for (int d = 0; d < stackSize; d++)
-            {
-                _加算器_先手[d] = new float[CNNUE評価器.L1数];
-                _加算器_後手[d] = new float[CNNUE評価器.L1数];
-            }
+            // NNUE なし → C駒得評価器 で差分更新（_駒価値 はすでに byte スケール）
+            _駒得評価器 = new C駒得評価器(_駒価値);
+
+            _加算器_先手_駒得 = new int[stackSize];
+            _加算器_後手_駒得 = new int[stackSize];
         }
 
         var v = _p.駒価値;
@@ -167,6 +160,14 @@ public sealed partial class CαβAI : IプレイヤーAI
         int n = C合法手生成器.Get合法手(盤面, buf);
         if (n == 0) return (null, -詰点数);
 
+        //// 詰み探索（αβ探索の深さより深い詰みを確実に見つける）
+        //if (_p.詰み探索手数 > 0)
+        //{
+        //    var 詰み = C詰将棋探索.詰み探索(盤面, _p.詰み探索手数, ct);
+        //    if (詰み.HasValue && !ct.IsCancellationRequested)
+        //        return (詰み.Value.初手, 詰点数 - 詰み.Value.手数);
+        //}
+
         // 思考時間ms > 0 のとき探索深さの上限を緩め、時間切れで止まるまで深く探索する
         int 最大深さ = _p.思考時間ms > 0 ? 99 : _p.探索深さ;
 
@@ -178,38 +179,52 @@ public sealed partial class CαβAI : IプレイヤーAI
         _履歴数 = 0;
         _ハッシュ履歴[_履歴数++] = 盤面.αβハッシュ;
 
-        // ルートで詰み探索
-        {
-            var 詰み = C詰将棋探索.詰み探索(盤面, _p.詰み探索手数, ct);
-            if (詰み.HasValue) return (詰み.Value.初手, 詰点数 - 詰み.Value.手数);
-        }
-
         S手 最善手 = buf[0];
         int 点数   = 0;
-        const int AspirationDelta = 50;
+        int aspDelta = 50;
+        int failedHighCnt = 0;
+
         for (int 深さ = 1; 深さ <= 最大深さ && !ct.IsCancellationRequested; 深さ++)
         {
-            if (深さ <= 2)
+            int α, β;
+            if (深さ >= 5)
             {
-                (最善手, 点数) = SearchRoot(盤面, buf[..n], 深さ, -詰点数, 詰点数, ct);
+                α = Math.Max(-詰点数, 点数 - aspDelta);
+                β = Math.Min( 詰点数, 点数 + aspDelta);
             }
             else
             {
-                int α = 点数 - AspirationDelta;
-                int β = 点数 + AspirationDelta;
-                int delta = AspirationDelta;
-                while (!ct.IsCancellationRequested)
-                {
-                    (S手 候補手, int s) = SearchRoot(盤面, buf[..n], 深さ, α, β, ct);
-                    if (ct.IsCancellationRequested) break;
-                    if (s > α && s < β) { 最善手 = 候補手; 点数 = s; break; }
-                    // α/β を広げる。境界に張り付いて変わらなくなったら採用して抜ける
-                    int newα = s <= α ? Math.Max(-詰点数, α - delta) : α;
-                    int newβ = s >= β ? Math.Min(詰点数,  β + delta) : β;
-                    if (newα == α && newβ == β) { 最善手 = 候補手; 点数 = s; break; }
-                    α = newα; β = newβ; delta *= 2;
-                }
+                α = -詰点数; β = 詰点数;
             }
+
+            while (true)
+            {
+                int 調整深さ = Math.Max(1, 深さ - failedHighCnt);
+                (最善手, 点数) = SearchRoot(盤面, buf[..n], 調整深さ, α, β, ct);
+
+                if (ct.IsCancellationRequested) break;
+
+                if (点数 <= α)
+                {
+                    β = (α + β) / 2;
+                    α = Math.Max(-詰点数, 点数 - aspDelta);
+                    failedHighCnt = 0;
+                    aspDelta = aspDelta * 4 / 3 + 1;
+                }
+                else if (点数 >= β)
+                {
+                    β = Math.Min(詰点数, 点数 + aspDelta);
+                    failedHighCnt++;
+                    aspDelta = aspDelta * 4 / 3 + 1;
+                }
+                else break;
+
+                // フルウィンドウでもfailするなら（詰みスコア等）そのまま採用
+                if (α <= -詰点数 && β >= 詰点数) break;
+            }
+
+            aspDelta = 50;
+            failedHighCnt = 0;
         }
         _履歴数 = 0;
 

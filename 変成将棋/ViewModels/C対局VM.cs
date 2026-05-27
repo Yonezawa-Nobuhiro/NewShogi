@@ -1075,8 +1075,28 @@ public class C対局VM : INotifyPropertyChanged
 
     private void 棋譜再生を終了()
     {
+        int 位置 = _再生位置;
         _再生位置 = -1;
-        // ライブ局面（最後に記録した SFEN）を復元
+
+        // 現在の再生位置以降を削除して、その手数から対局再開
+        int 削除開始 = 位置 + 1;
+        if (削除開始 < _棋譜SFENs.Count)
+            _棋譜SFENs.RemoveRange(削除開始, _棋譜SFENs.Count - 削除開始);
+        if (削除開始 < _棋譜ハッシュ.Count)
+            _棋譜ハッシュ.RemoveRange(削除開始, _棋譜ハッシュ.Count - 削除開始);
+        if (削除開始 < _棋譜後手番.Count)
+            _棋譜後手番.RemoveRange(削除開始, _棋譜後手番.Count - 削除開始);
+        if (削除開始 < _王手状態履歴.Count)
+            _王手状態履歴.RemoveRange(削除開始, _王手状態履歴.Count - 削除開始);
+
+        // 局面頻度マップを現在位置までの棋譜で再構築
+        _局面頻度.Clear();
+        foreach (var h in _棋譜ハッシュ)
+        {
+            _局面頻度.TryGetValue(h, out int 頻度);
+            _局面頻度[h] = 頻度 + 1;
+        }
+
         _盤面.Reset(_棋譜SFENs[^1]);
         foreach (var vm in 升一覧) vm.Refresh();
         Update持ち駒枚数();

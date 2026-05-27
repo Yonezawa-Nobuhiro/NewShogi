@@ -19,6 +19,7 @@ public static class Benchmark
         long accumNodes = 0, accumQNodes = 0;
         var sw = Stopwatch.StartNew();
 
+        string 終局理由 = "手数上限";
         while (true)
         {
             Console.Error.WriteLine($"  [{moves + 1}手目開始] {board.ToSFEN()}");
@@ -27,13 +28,22 @@ public static class Benchmark
             moveSw.Stop();
             accumNodes  += ai.StatNodes;
             accumQNodes += ai.StatQNodes;
-            if (手 == null) break;          // 詰み → 終局
+            if (手 == null)
+            {
+                終局理由 = board.手番 == E手番.先手 ? "後手勝ち（先手詰み）" : "先手勝ち（後手詰み）";
+                break;
+            }
             board.Apply(手.Value);
             moves++;
             sfens.Add(board.ToSFEN());
             Console.Error.Write($"\r  {moves}手目: {moveSw.Elapsed.TotalMilliseconds:F0} ms   ");
             // 相手玉を取っていたら終局（変成将棋では玉直取りが合法）
-            if (!board.Find玉(board.手番).Is盤内) break;
+            if (!board.Find玉(board.手番).Is盤内)
+            {
+                var 勝者 = board.手番 == E手番.先手 ? E手番.後手 : E手番.先手;
+                終局理由 = 勝者 == E手番.先手 ? "先手勝ち（玉取り）" : "後手勝ち（玉取り）";
+                break;
+            }
             if (moves >= maxMoves) break;    // 最大手数ガード
         }
         Console.Error.WriteLine();
@@ -45,7 +55,7 @@ public static class Benchmark
         long totalNodes = accumNodes + accumQNodes;
         double nps = sw.Elapsed.TotalSeconds > 0 ? totalNodes / sw.Elapsed.TotalSeconds : 0;
 
-        Console.WriteLine($"  手数: {moves}  合計: {sw.Elapsed.TotalSeconds:F1} 秒");
+        Console.WriteLine($"  手数: {moves}  終局: {終局理由}  合計: {sw.Elapsed.TotalSeconds:F1} 秒");
         Console.WriteLine($"  1手あたり: {msPerMove:F1} ms  ({movesPerSec:F0} 手/秒)");
         Console.WriteLine($"  nodes={accumNodes:N0}  qnodes={accumQNodes:N0}  合計={totalNodes:N0}");
         Console.WriteLine($"  NPS: {nps:N0} 局面/秒");

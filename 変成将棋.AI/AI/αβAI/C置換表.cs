@@ -20,7 +20,7 @@ public sealed class C置換表
     private readonly ulong _マスク;
     private byte _現在世代;
 
-    internal C置換表(int 対数 = 24)   // 2^24 = 16Mエントリ ≒ 224MB
+    internal C置換表(int 対数 = 23)   // 2^23 = 8Mエントリ ≒ 112MB
     {
         _表   = new C置換表エントリ[1 << 対数];
         _マスク = (ulong)(_表.Length - 1);
@@ -29,14 +29,15 @@ public sealed class C置換表
     // 探索開始時に呼ぶ。世代が変わることで古いエントリを上書き可能にする。
     internal void 世代を進める() => _現在世代++;
 
-    // ヒットかつ十分な深さなら true とスコアを返す。最善手は世代問わず返す（手順並べ替え用）。
+    // ヒットかつ十分な深さなら true とスコアを返す。最善手は同世代・ハッシュ一致時のみ返す（手順並べ替え用）。
     internal bool 検索(ulong h, int 深さ, int α, int β, out int スコア, out S手 最善手)
     {
         ref var e = ref _表[h & _マスク];
-        最善手 = e.最善手;
         スコア  = 0;
+        最善手  = default;
         if (e.ハッシュ上位 != (uint)(h >> 32)) return false;
-        if (e.世代 != _現在世代)               return false;  // 古い世代はスコアを信用しない
+        if (e.世代 != _現在世代)               return false;  // 古い世代はスコア・最善手ともに使わない
+        最善手 = e.最善手;
         if (e.深さ < 深さ)                     return false;
         スコア = e.スコア;
         if (e.フラグ == 完全)              return true;

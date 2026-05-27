@@ -75,6 +75,44 @@ public class CαβAI探索Tests
     }
 
     [Fact]
+    public void 詰み逃し_51金打ちで1手詰み()
+    {
+        // 詰み逃し.kf 96手目後局面（先手番）: 51金打ちで後手玉41が詰む
+        // 後手玉41の逃げ場: 31=後手銀, 32=後手金, 42=角24の利き, 51=金を打つ, 52=金の利き → なし
+        const string sfen = "l1s2ks2/r5g2/pp7/5K1B1/Pn2P4/9/9/L8/3G5 b BGL7Prg2s2nl7p 1";
+        var board = new C盤面(sfen);
+        using var ai = new CαβAI(nnueEnabled: false);
+        var 手 = ai.Get手(board);
+        Assert.NotNull(手);
+        // 51金打ち = 打ち手, 移動先=(5,1), 駒種=金将
+        Assert.True(手!.Value.Is打ち, $"打ち手でない: {手}");
+        var 先 = 手.Value.Get移動先;
+        Assert.Equal(5, 先.列);
+        Assert.Equal(1, 先.段);
+    }
+
+    // ── Aspiration Window TT汚染によるやねうら式実装確認（2026-05-27） ──────
+    // lnsg3nl/1r3kgs1/p1pppp3/6pR1/1p6p/2P5P/PPNPPPP2/1SG2G3/L3K1SNL b BPbp 1
+    // この局面で旧Aspiration Window実装（fail highリトライ時のTT汚染）により
+    // 明らかに駒損な22飛成が選ばれていた。
+
+    [Fact]
+    public void AspirationWindow_22飛成を選ばない()
+    {
+        // NNUE必須: C駒得評価器は全局面0を返すため、NNUEなしでは手が正しく評価されない
+        const string sfen = "lnsg3nl/1r3kgs1/p1pppp3/6pR1/1p6p/2P5P/PPNPPPP2/1SG2G3/L3K1SNL b BPbp 1";
+        var board = new C盤面(sfen);
+        using var ai = new CαβAI(nnueEnabled: true);
+        var 手 = ai.Get手(board);
+        Assert.NotNull(手);
+        // 22飛成（駒損の悪手）が選ばれないことを確認
+        bool is22飛成 = 手!.Value.Is成り
+                     && 手.Value.Get移動先.列 == 2
+                     && 手.Value.Get移動先.段 == 2;
+        Assert.False(is22飛成, $"22飛成が選ばれた: {手}");
+    }
+
+    [Fact]
     public async System.Threading.Tasks.Task AspirationWindow_詰みスコアで無限ループしない()
     {
         // 深さ3以上でAspiration Windowが使われる。

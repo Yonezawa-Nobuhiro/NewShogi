@@ -13,8 +13,7 @@ partial class CαβAI
         _stat_qnodes++;
         if (quiesce深さ > _stat_qdepth_max) _stat_qdepth_max = quiesce深さ;
 
-        // depth=0: QSearch無効（即Eval）
-        if (quiesce深さ >= 0) return Eval(加算器深度, 盤面);
+        if (quiesce深さ >= _p.Quiesce深さ) return Eval(加算器深度, 盤面);
 
         // stand-pat: NNUE差分評価（NNUE未使用時はC評価関数にフォールバック）
         int stand_pat = Eval(加算器深度, 盤面);
@@ -33,7 +32,9 @@ partial class CαβAI
             // 移動先に駒があればそれ、なければ中間駒（獅王中取り）を使う
             var 移動先駒 = 盤面.Get駒(候補手集[i].Get移動先);
             if (移動先駒.Is有効)
+            {
                 capScores[i] = _駒価値[(int)移動先駒.種類];
+            }
             else if (!候補手集[i].Is打ち)
             {
                 var 中間駒 = 盤面.Get駒(候補手集[i].Get中間);
@@ -77,8 +78,9 @@ partial class CαβAI
                 if (SEE(盤面, 候補手集[i], capScores[i]) < 0) { _stat_qsee_skipped++; continue; }
             }
 
+            var 指した側 = 盤面.手番;
             var 取消 = 盤面.Apply(候補手集[i]);
-            if (!C合法手生成器.Is自玉安全(盤面, 盤面.手番))
+            if (!C合法手生成器.Is自玉安全(盤面, 指した側))
             {
                 盤面.Undo(候補手集[i], 取消);
                 continue;

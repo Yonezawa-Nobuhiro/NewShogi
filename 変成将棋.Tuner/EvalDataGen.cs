@@ -33,9 +33,12 @@ public static class EvalDataGen
         Console.WriteLine($"  自己対局データ生成  {numGames} 局  → {outPath}");
         Console.WriteLine("  ─────────────────────────────────────────────────────────────────────");
 
-        var gameLines = new List<string>[numGames];
+        var gameLines   = new List<string>[numGames];
+        var gameMoves   = new int[numGames];    // 各局の手数
+        var gameResults = new int[numGames];    // 1=先手勝ち  -1=後手勝ち  0=引き分け
         int completed = 0;
         long sampleCount = 0;
+        int 先手勝ち = 0, 後手勝ち = 0, 引き分け = 0;
         var sw = Stopwatch.StartNew();
 
         var printLock = new object();
@@ -52,6 +55,8 @@ public static class EvalDataGen
             {
                 await semaphore.WaitAsync();
                 List<string> lines = new(400);
+                int moves = 0;
+                int result = 0;
                 Exception? err = null;
 
                 var thread = new Thread(() =>
@@ -71,18 +76,32 @@ public static class EvalDataGen
                             {
                                 S手[] buf = new S手[600];
                                 int cnt = C合法手生成器.Get合法手(board, buf);
-                                if (cnt == 0) break;
+                                if (cnt == 0)
+                                {
+                                    result = board.手番 == E手番.先手 ? -1 : 1;
+                                    break;
+                                }
                                 手 = buf[rng.Next(cnt)];
                             }
                             else
                             {
                                 var current = board.手番 == E手番.先手 ? ai先手 : ai後手;
                                 var (bestMove, score) = current.Get手とスコア(board);
-                                if (bestMove == null) break;
+                                if (bestMove == null)
+                                {
+                                    result = board.手番 == E手番.先手 ? -1 : 1;
+                                    break;
+                                }
                                 手 = bestMove;
                                 lines.Add($"{board.ToSFEN()}\t{score}");
                             }
                             board.Apply(手.Value);
+                            moves++;
+                            if (!board.Find玉(board.手番).Is盤内)
+                            {
+                                result = board.手番 == E手番.先手 ? -1 : 1;
+                                break;
+                            }
                         }
                     }
                     catch (Exception ex) { err = ex; }
@@ -95,9 +114,19 @@ public static class EvalDataGen
                 if (err != null)
                     Console.WriteLine($"\n  ゲーム{gLocal} エラー: {err.GetType().Name}: {err.Message}");
 
-                gameLines[gLocal] = lines;
+                gameLines[gLocal]   = lines;
+                gameMoves[gLocal]   = moves;
+                gameResults[gLocal] = result;
                 int done = Interlocked.Increment(ref completed);
                 long totalSamples = Interlocked.Add(ref sampleCount, lines.Count);
+                int s, g2, d;
+                lock (printLock)
+                {
+                    if      (result > 0) 先手勝ち++;
+                    else if (result < 0) 後手勝ち++;
+                    else                 引き分け++;
+                    s = 先手勝ち; g2 = 後手勝ち; d = 引き分け;
+                }
 
                 double elapsed = sw.Elapsed.TotalSeconds;
                 double eta = done > 0 ? elapsed / done * (numGames - done) : 0;
@@ -105,7 +134,8 @@ public static class EvalDataGen
                 {
                     Console.Write(
                         $"\r  {Bar(done, numGames)}  {done}/{numGames}  {(double)done/numGames*100:F0}%  " +
-                        $"eta {FmtTime(eta)}  {totalSamples:N0} サンプル  経過 {FmtTime(elapsed)}");
+                        $"eta {FmtTime(eta)}  {totalSamples:N0} サンプル  経過 {FmtTime(elapsed)}  " +
+                        $"先手勝:{s} 後手勝:{g2} 引分:{d}");
                 }
             });
         }
@@ -113,6 +143,11 @@ public static class EvalDataGen
         Task.WaitAll(tasks);
 
         Console.WriteLine();
+
+        // 勝敗サマリー
+        double tot = 先手勝ち + 後手勝ち + 引き分け;
+        double avgMoves = gameMoves.Average();
+        Console.WriteLine($"  先手勝:{先手勝ち}({先手勝ち/tot*100:F1}%)  後手勝:{後手勝ち}({後手勝ち/tot*100:F1}%)  引分:{引き分け}({引き分け/tot*100:F1}%)  平均{avgMoves:F1}手");
 
         int total = 0;
         using var w = new StreamWriter(outPath, false, Encoding.UTF8);

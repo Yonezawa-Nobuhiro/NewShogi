@@ -34,6 +34,7 @@ public record αβパラメータ
     [JsonPropertyName("駒価値")]           public 駒価値設定 駒価値     { get; init; } = new();
     [JsonPropertyName("思考時間ms")]       public int 思考時間ms       { get; init; } = 0;  // 0=深さ固定
     [JsonPropertyName("詰み探索手数")]     public int 詰み探索手数     { get; init; } = 5;
+    [JsonPropertyName("Quiesce深さ")]      public int Quiesce深さ      { get; init; } = 4;
 
     private static readonly JsonSerializerOptions _jsonOpt =
         new() { ReadCommentHandling = JsonCommentHandling.Skip };
